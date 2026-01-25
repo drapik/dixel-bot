@@ -1,0 +1,1810 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIXEL Auto Light - Темный Технологичный</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-dark: #0a0e17;
+            --bg-card: #151922;
+            --neon-cyan: #00fff2;
+            --neon-purple: #bf00ff;
+            --text-primary: #e8e9ed;
+            --text-secondary: #8b8e98;
+            --accent: #00fff2;
+        }
+
+        body {
+            font-family: 'Exo 2', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            background-image:
+                radial-gradient(circle at 20% 30%, rgba(0, 255, 242, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(191, 0, 255, 0.05) 0%, transparent 50%);
+        }
+
+        .header {
+            position: sticky;
+            top: 0;
+            background: rgba(10, 14, 23, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(0, 255, 242, 0.2);
+            padding: 16px 20px 18px;
+            z-index: 100;
+            animation: slideDown 0.5s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 16px;
+            animation: glow 2s ease-in-out infinite;
+        }
+
+        @keyframes glow {
+            0%, 100% { filter: drop-shadow(0 0 5px var(--neon-cyan)); }
+            50% { filter: drop-shadow(0 0 15px var(--neon-cyan)); }
+        }
+
+        .search-bar {
+            position: relative;
+            margin-bottom: 14px;
+        }
+
+        .search-bar input {
+            width: 100%;
+            padding: 14px 50px 14px 20px;
+            background: var(--bg-card);
+            border: 1px solid rgba(0, 255, 242, 0.3);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 15px;
+            font-family: 'Exo 2', sans-serif;
+            transition: all 0.3s ease;
+        }
+
+        .search-bar input:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 255, 242, 0.2);
+        }
+
+        .search-bar input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--neon-cyan);
+            font-size: 20px;
+        }
+
+        .filter-row {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .top-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            border: none;
+            font-family: 'Exo 2', sans-serif;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-secondary {
+            background: rgba(0, 255, 242, 0.1);
+            border: 1px solid rgba(0, 255, 242, 0.3);
+            color: var(--neon-cyan);
+        }
+
+        .btn-cart {
+            background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+            color: var(--bg-dark);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-cart::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .btn-cart:active::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .btn-history {
+            background: rgba(0, 255, 242, 0.1);
+            border: 1px solid rgba(0, 255, 242, 0.3);
+            color: var(--neon-cyan);
+        }
+
+        .btn-history:hover,
+        .btn-secondary:hover {
+            background: rgba(0, 255, 242, 0.2);
+            box-shadow: 0 0 20px rgba(0, 255, 242, 0.1);
+        }
+
+        .price-modes {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .price-modes::-webkit-scrollbar {
+            display: none;
+        }
+
+        .price-chip {
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 12px;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .price-chip.active {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+            background: rgba(0, 255, 242, 0.15);
+            box-shadow: 0 0 12px rgba(0, 255, 242, 0.2);
+        }
+
+        .auth-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .auth-badge {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .auth-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+        }
+
+        .auth-name {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .btn-auth {
+            background: rgba(191, 0, 255, 0.12);
+            border: 1px solid rgba(191, 0, 255, 0.3);
+            color: var(--neon-purple);
+            max-width: 180px;
+        }
+
+        .btn-auth:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        .categories {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding: 14px 20px 10px;
+            scrollbar-width: none;
+        }
+
+        .categories::-webkit-scrollbar {
+            display: none;
+        }
+
+        .category-chip {
+            padding: 10px 20px;
+            background: var(--bg-card);
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            border-radius: 20px;
+            color: var(--text-secondary);
+            font-size: 13px;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .category-chip.active {
+            background: linear-gradient(135deg, rgba(0, 255, 242, 0.2), rgba(191, 0, 255, 0.2));
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+            box-shadow: 0 0 15px rgba(0, 255, 242, 0.2);
+        }
+
+        .category-chip:hover:not(.active) {
+            border-color: var(--neon-cyan);
+            transform: translateY(-2px);
+        }
+
+        .breadcrumb {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            padding: 0 20px 10px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .breadcrumb::-webkit-scrollbar {
+            display: none;
+        }
+
+        .breadcrumb button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .breadcrumb button:hover {
+            color: var(--neon-cyan);
+        }
+
+        .breadcrumb-divider {
+            color: rgba(0, 255, 242, 0.4);
+        }
+
+        .status-row {
+            display: flex;
+            gap: 8px;
+            padding: 0 20px 16px;
+            flex-wrap: wrap;
+        }
+
+        .status-pill {
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(0, 255, 242, 0.08);
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        main {
+            padding-bottom: 40px;
+        }
+
+        .products-grid {
+            padding: 0 20px 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px;
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .product-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(0, 255, 242, 0.15);
+            border-radius: 16px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .product-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 242, 0.1), transparent);
+            transition: left 0.5s;
+        }
+
+        .product-card:hover::before {
+            left: 100%;
+        }
+
+        .product-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 10px 30px rgba(0, 255, 242, 0.2);
+        }
+
+        .product-card.disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        .product-card.disabled:hover {
+            transform: none;
+            box-shadow: none;
+            border-color: rgba(0, 255, 242, 0.15);
+        }
+
+        .product-image {
+            width: 100%;
+            aspect-ratio: 1;
+            background: linear-gradient(135deg, rgba(0, 255, 242, 0.05), rgba(191, 0, 255, 0.05));
+            border-radius: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: 1px solid rgba(0, 255, 242, 0.1);
+        }
+
+        .product-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .product-sku {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            color: var(--neon-cyan);
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        .product-name {
+            font-size: 13px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            font-weight: 400;
+        }
+
+        .product-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(0, 255, 242, 0.1);
+        }
+
+        .product-price-block {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .product-price {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+        }
+
+        .product-price-meta {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .price-stack {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 4px;
+            margin-top: 6px;
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
+        .price-stack span {
+            padding: 3px 4px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 255, 242, 0.15);
+            background: rgba(0, 255, 242, 0.06);
+            text-align: center;
+        }
+
+        .product-stock {
+            font-size: 11px;
+            color: var(--text-secondary);
+            background: rgba(0, 255, 242, 0.1);
+            padding: 4px 8px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        .product-stock.low {
+            color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
+        }
+
+        .add-to-cart {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            background: rgba(0, 255, 242, 0.1);
+            border: 1px solid rgba(0, 255, 242, 0.3);
+            border-radius: 8px;
+            color: var(--neon-cyan);
+            font-family: 'Exo 2', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+
+        .add-to-cart:hover {
+            background: var(--neon-cyan);
+            color: var(--bg-dark);
+            box-shadow: 0 5px 15px rgba(0, 255, 242, 0.3);
+        }
+
+        .add-to-cart:disabled {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            cursor: not-allowed;
+        }
+
+        .empty-state {
+            display: none;
+            text-align: center;
+            padding: 30px 20px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .btn-load {
+            width: calc(100% - 40px);
+            margin: 0 20px 30px;
+            background: rgba(0, 255, 242, 0.08);
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            color: var(--neon-cyan);
+        }
+
+        .btn-load:hover {
+            background: rgba(0, 255, 242, 0.2);
+        }
+
+        .drawer {
+            position: fixed;
+            inset: 0;
+            background: rgba(5, 7, 12, 0.75);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 200;
+            display: flex;
+            align-items: flex-end;
+        }
+
+        .drawer.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .drawer-panel {
+            width: 100%;
+            max-height: 80vh;
+            background: var(--bg-card);
+            border-radius: 18px 18px 0 0;
+            border: 1px solid rgba(0, 255, 242, 0.15);
+            display: flex;
+            flex-direction: column;
+            transform: translateY(100%);
+            transition: transform 0.35s ease;
+        }
+
+        .drawer.open .drawer-panel {
+            transform: translateY(0);
+        }
+
+        .drawer-header {
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(0, 255, 242, 0.1);
+        }
+
+        .drawer-header h3 {
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .drawer-body {
+            padding: 14px 16px 20px;
+            overflow-y: auto;
+        }
+
+        .drawer-footer {
+            padding: 12px 20px 18px;
+            border-top: 1px solid rgba(0, 255, 242, 0.1);
+        }
+
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            background: rgba(0, 255, 242, 0.1);
+            color: var(--neon-cyan);
+            cursor: pointer;
+        }
+
+        .category-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .category-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 10px;
+            margin: 3px 0;
+            cursor: pointer;
+            border: 1px solid transparent;
+            background: rgba(0, 255, 242, 0.04);
+            padding-left: calc(12px + (var(--level, 0) * 12px));
+        }
+
+        .category-row.active {
+            border-color: var(--neon-cyan);
+            background: rgba(0, 255, 242, 0.14);
+            color: var(--neon-cyan);
+        }
+
+        .category-toggle {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            background: rgba(0, 255, 242, 0.08);
+            color: var(--neon-cyan);
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .category-toggle:disabled {
+            opacity: 0.2;
+            cursor: default;
+        }
+
+        .category-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 13px;
+        }
+
+        .cart-item {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(0, 255, 242, 0.04);
+            border: 1px solid rgba(0, 255, 242, 0.1);
+            margin-bottom: 10px;
+        }
+
+        .cart-item-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .cart-item-name {
+            font-size: 13px;
+            line-height: 1.3;
+        }
+
+        .cart-item-sku {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .cart-item-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .qty-btn {
+            width: 26px;
+            height: 26px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            background: rgba(0, 255, 242, 0.08);
+            color: var(--neon-cyan);
+            cursor: pointer;
+        }
+
+        .cart-item-price {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            color: var(--neon-cyan);
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .order-card {
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(0, 255, 242, 0.04);
+            border: 1px solid rgba(0, 255, 242, 0.1);
+            margin-bottom: 12px;
+        }
+
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .order-status {
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: rgba(191, 0, 255, 0.12);
+            color: var(--neon-purple);
+            font-size: 11px;
+        }
+
+        .order-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 14, 23, 0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+        }
+
+        .loading-card {
+            padding: 16px 22px;
+            border-radius: 12px;
+            background: var(--bg-card);
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            color: var(--neon-cyan);
+            font-size: 14px;
+        }
+
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            transform: translate(-50%, 20px);
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: var(--bg-card);
+            border: 1px solid rgba(0, 255, 242, 0.2);
+            color: var(--text-primary);
+            font-size: 12px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            z-index: 400;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        @media (max-width: 720px) {
+            .products-grid {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            }
+
+            .top-actions {
+                flex-direction: column;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .filter-row {
+                grid-template-columns: 1fr;
+            }
+
+            .btn-auth {
+                width: 100%;
+            }
+
+            .auth-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">DIXEL</div>
+
+        <div class="search-bar">
+            <input id="searchInput" type="text" placeholder="Поиск по артикулу, названию...">
+            <span class="search-icon">⚡</span>
+        </div>
+
+        <div class="filter-row">
+            <button class="btn btn-secondary" id="openCategories" type="button">Категории</button>
+            <div class="price-modes" id="priceModes">
+                <button class="price-chip" data-tier="base" type="button">База</button>
+                <button class="price-chip" data-tier="minus5" type="button">-5%</button>
+                <button class="price-chip" data-tier="minus8" type="button">-8%</button>
+                <button class="price-chip" data-tier="minus10" type="button">-10%</button>
+            </div>
+        </div>
+
+        <div class="top-actions">
+            <button class="btn btn-cart" id="cartButton" type="button">🛒 Корзина: 0 ₽</button>
+            <button class="btn btn-history" id="historyButton" type="button">📋 История</button>
+        </div>
+
+        <div class="auth-row">
+            <div class="auth-badge">
+                <div class="auth-title">Пользователь</div>
+                <div class="auth-name" id="authName">Гость</div>
+            </div>
+            <button class="btn btn-auth" id="authButton" type="button">Войти</button>
+        </div>
+    </header>
+
+    <div class="categories" id="topCategories"></div>
+    <div class="breadcrumb" id="breadcrumb"></div>
+    <div class="status-row">
+        <div class="status-pill" id="resultsCount">Товаров: 0</div>
+        <div class="status-pill" id="activeFilters">Фильтры: нет</div>
+    </div>
+
+    <main>
+        <div class="products-grid" id="productsGrid"></div>
+        <div class="empty-state" id="emptyState">Нет товаров по выбранным условиям.</div>
+        <button class="btn btn-load" id="loadMoreButton" type="button">Показать еще</button>
+    </main>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-card">Загрузка прайса...</div>
+    </div>
+
+    <div class="drawer" id="categoryDrawer">
+        <div class="drawer-panel">
+            <div class="drawer-header">
+                <h3>Категории</h3>
+                <button class="icon-btn" data-close="categoryDrawer" type="button">✕</button>
+            </div>
+            <div class="drawer-body" id="categoryTree"></div>
+        </div>
+    </div>
+
+    <div class="drawer" id="cartDrawer">
+        <div class="drawer-panel">
+            <div class="drawer-header">
+                <h3>Корзина</h3>
+                <button class="icon-btn" data-close="cartDrawer" type="button">✕</button>
+            </div>
+            <div class="drawer-body" id="cartItems"></div>
+            <div class="drawer-footer">
+                <div class="summary-row">
+                    <span>Итого</span>
+                    <span id="cartTotal">0 ₽</span>
+                </div>
+                <button class="btn btn-cart" id="orderButton" type="button">Отправить заказ</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="drawer" id="historyDrawer">
+        <div class="drawer-panel">
+            <div class="drawer-header">
+                <h3>История заказов</h3>
+                <button class="icon-btn" data-close="historyDrawer" type="button">✕</button>
+            </div>
+            <div class="drawer-body" id="historyList"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <template id="productTemplate">
+        <div class="product-card">
+            <div class="product-image">
+                <img src="" alt="">
+            </div>
+            <div class="product-sku"></div>
+            <div class="product-name"></div>
+            <div class="product-footer">
+                <div class="product-price-block">
+                    <div class="product-price"></div>
+                    <div class="product-price-meta"></div>
+                    <div class="price-stack">
+                        <span data-tier="minus5"></span>
+                        <span data-tier="minus8"></span>
+                        <span data-tier="minus10"></span>
+                    </div>
+                </div>
+                <div class="product-stock"></div>
+            </div>
+            <button class="add-to-cart" type="button">В корзину</button>
+        </div>
+    </template>
+
+    <script>
+        const PLACEHOLDER_IMAGE = "https://via.placeholder.com/200x200/151922/00fff2?text=DIXEL";
+
+        const PRICE_TIERS = {
+            base: { label: "База", discount: 0 },
+            minus5: { label: "-5%", discount: 0.05 },
+            minus8: { label: "-8%", discount: 0.08 },
+            minus10: { label: "-10%", discount: 0.1 }
+        };
+
+        const STORAGE_KEYS = {
+            cart: "dixel_cart",
+            orders: "dixel_orders",
+            user: "dixel_user",
+            priceTier: "dixel_price_tier"
+        };
+
+        const state = {
+            categoriesById: {},
+            roots: [],
+            categoryDescendants: {},
+            expandedCategories: new Set(),
+            selectedCategoryId: null,
+            products: [],
+            productsById: {},
+            filteredProducts: [],
+            searchQuery: "",
+            priceTier: "minus5",
+            cart: [],
+            orders: [],
+            user: null,
+            telegramAvailable: false,
+            displayCount: 24
+        };
+
+        const el = {
+            searchInput: document.getElementById("searchInput"),
+            priceModes: document.getElementById("priceModes"),
+            openCategories: document.getElementById("openCategories"),
+            cartButton: document.getElementById("cartButton"),
+            historyButton: document.getElementById("historyButton"),
+            authName: document.getElementById("authName"),
+            authButton: document.getElementById("authButton"),
+            topCategories: document.getElementById("topCategories"),
+            breadcrumb: document.getElementById("breadcrumb"),
+            resultsCount: document.getElementById("resultsCount"),
+            activeFilters: document.getElementById("activeFilters"),
+            productsGrid: document.getElementById("productsGrid"),
+            emptyState: document.getElementById("emptyState"),
+            loadMoreButton: document.getElementById("loadMoreButton"),
+            categoryDrawer: document.getElementById("categoryDrawer"),
+            categoryTree: document.getElementById("categoryTree"),
+            cartDrawer: document.getElementById("cartDrawer"),
+            cartItems: document.getElementById("cartItems"),
+            cartTotal: document.getElementById("cartTotal"),
+            orderButton: document.getElementById("orderButton"),
+            historyDrawer: document.getElementById("historyDrawer"),
+            historyList: document.getElementById("historyList"),
+            loadingOverlay: document.getElementById("loadingOverlay"),
+            toast: document.getElementById("toast")
+        };
+
+        const productTemplate = document.getElementById("productTemplate");
+        const currencyFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
+
+        init();
+
+        async function init() {
+            bindUI();
+            loadStoredState();
+            initTelegram();
+            await loadCatalog();
+            renderTopCategories();
+            renderCategoryTree();
+            renderBreadcrumb();
+            applyFilters();
+            renderHistory();
+            updateCartBadge();
+        }
+
+        function bindUI() {
+            let searchTimer;
+            el.searchInput.addEventListener("input", (event) => {
+                clearTimeout(searchTimer);
+                const value = event.target.value;
+                searchTimer = setTimeout(() => {
+                    state.searchQuery = value.trim().toLowerCase();
+                    applyFilters();
+                }, 150);
+            });
+
+            el.priceModes.addEventListener("click", (event) => {
+                const chip = event.target.closest(".price-chip");
+                if (!chip) {
+                    return;
+                }
+                setPriceTier(chip.dataset.tier);
+            });
+
+            el.openCategories.addEventListener("click", () => openDrawer("categoryDrawer"));
+            el.cartButton.addEventListener("click", () => {
+                renderCart();
+                openDrawer("cartDrawer");
+            });
+            el.historyButton.addEventListener("click", () => {
+                renderHistory();
+                openDrawer("historyDrawer");
+            });
+            el.orderButton.addEventListener("click", placeOrder);
+            el.loadMoreButton.addEventListener("click", () => {
+                state.displayCount += 24;
+                renderProducts();
+            });
+            el.authButton.addEventListener("click", handleAuthAction);
+
+            document.querySelectorAll(".drawer").forEach((drawer) => {
+                drawer.addEventListener("click", (event) => {
+                    if (event.target === drawer) {
+                        closeDrawer(drawer.id);
+                    }
+                });
+            });
+
+            document.querySelectorAll("[data-close]").forEach((btn) => {
+                btn.addEventListener("click", () => closeDrawer(btn.dataset.close));
+            });
+        }
+
+        function loadStoredState() {
+            state.cart = safeParse(localStorage.getItem(STORAGE_KEYS.cart), []);
+            state.orders = safeParse(localStorage.getItem(STORAGE_KEYS.orders), []);
+            const savedTier = localStorage.getItem(STORAGE_KEYS.priceTier);
+            if (PRICE_TIERS[savedTier]) {
+                state.priceTier = savedTier;
+            }
+            const savedUser = safeParse(localStorage.getItem(STORAGE_KEYS.user), null);
+            if (savedUser) {
+                state.user = savedUser;
+            }
+            updatePriceModeUI();
+        }
+
+        function initTelegram() {
+            const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+            state.telegramAvailable = Boolean(tg);
+            if (tg) {
+                tg.ready();
+                tg.expand();
+            }
+            const tgUser = tg && tg.initDataUnsafe ? tg.initDataUnsafe.user : null;
+            if (tgUser) {
+                const fullName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ");
+                state.user = {
+                    id: tgUser.id,
+                    name: fullName || tgUser.username || "Пользователь",
+                    username: tgUser.username || null
+                };
+                saveUser();
+            }
+            updateAuthUI();
+        }
+
+        async function loadCatalog() {
+            showLoading(true, "Загрузка прайса...");
+            try {
+                const response = await fetch("dixel_complete.yml", { cache: "no-store" });
+                if (!response.ok) {
+                    throw new Error("Catalog fetch failed");
+                }
+                const text = await response.text();
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(text, "text/xml");
+                if (xml.querySelector("parsererror")) {
+                    throw new Error("Catalog parse error");
+                }
+                parseCategories(xml);
+                parseProducts(xml);
+            } catch (error) {
+                console.error(error);
+                showToast("Не удалось загрузить каталог. Проверьте dixel_complete.yml.");
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function parseCategories(xml) {
+            const nodes = Array.from(xml.querySelectorAll("categories > category"));
+            const categoriesById = {};
+            nodes.forEach((node) => {
+                const id = node.getAttribute("id");
+                const parentId = node.getAttribute("parentId");
+                const name = node.textContent.trim();
+                if (!id || !name) {
+                    return;
+                }
+                categoriesById[id] = {
+                    id,
+                    parentId: parentId || null,
+                    name,
+                    children: []
+                };
+            });
+
+            const roots = [];
+            Object.values(categoriesById).forEach((category) => {
+                if (category.parentId && categoriesById[category.parentId]) {
+                    categoriesById[category.parentId].children.push(category);
+                } else {
+                    roots.push(category);
+                }
+            });
+
+            const sortCategories = (list) => {
+                list.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+                list.forEach((item) => sortCategories(item.children));
+            };
+            sortCategories(roots);
+
+            state.categoriesById = categoriesById;
+            state.roots = roots;
+            state.categoryDescendants = {};
+            state.expandedCategories = new Set(roots.map((category) => category.id));
+        }
+
+        function parseProducts(xml) {
+            const offers = Array.from(xml.querySelectorAll("offers > offer"));
+            const products = [];
+            const productsById = {};
+
+            offers.forEach((offer) => {
+                const name = getText(offer, "name");
+                if (!name) {
+                    return;
+                }
+                const id = offer.getAttribute("id") || name;
+                const sku = getText(offer, "vendorCode") || id;
+                const priceText = getText(offer, "price");
+                const priceValue = Number.parseFloat(priceText);
+                const basePrice = Number.isFinite(priceValue) ? Math.round(priceValue) : null;
+                const categoryId = getText(offer, "categoryId") || null;
+                const picture = getText(offer, "picture");
+                const available = offer.getAttribute("available") !== "false";
+                const outlet = offer.querySelector("outlet");
+                const stockValue = outlet ? Number.parseFloat(outlet.getAttribute("instock")) : 0;
+                const stock = Number.isFinite(stockValue) ? Math.round(stockValue) : 0;
+
+                const product = {
+                    id,
+                    sku,
+                    name,
+                    basePrice,
+                    categoryId,
+                    picture,
+                    available,
+                    stock,
+                    searchText: `${sku} ${name}`.toLowerCase()
+                };
+
+                products.push(product);
+                productsById[id] = product;
+            });
+
+            state.products = products;
+            state.productsById = productsById;
+        }
+
+        function renderTopCategories() {
+            el.topCategories.innerHTML = "";
+            el.topCategories.appendChild(createCategoryChip("Все товары", null));
+            state.roots.forEach((category) => {
+                el.topCategories.appendChild(createCategoryChip(category.name, category.id));
+            });
+        }
+
+        function renderBreadcrumb() {
+            el.breadcrumb.innerHTML = "";
+            const rootButton = document.createElement("button");
+            rootButton.textContent = "Все товары";
+            rootButton.addEventListener("click", () => selectCategory(null));
+            el.breadcrumb.appendChild(rootButton);
+
+            if (!state.selectedCategoryId) {
+                return;
+            }
+
+            const path = getCategoryPath(state.selectedCategoryId);
+            path.forEach((category) => {
+                const divider = document.createElement("span");
+                divider.className = "breadcrumb-divider";
+                divider.textContent = "›";
+                const button = document.createElement("button");
+                button.textContent = category.name;
+                button.addEventListener("click", () => selectCategory(category.id));
+                el.breadcrumb.appendChild(divider);
+                el.breadcrumb.appendChild(button);
+            });
+        }
+
+        function renderCategoryTree() {
+            el.categoryTree.innerHTML = "";
+            const fragment = document.createDocumentFragment();
+
+            const allWrapper = document.createElement("div");
+            allWrapper.className = "category-item";
+            const allRow = document.createElement("div");
+            allRow.className = `category-row${!state.selectedCategoryId ? " active" : ""}`;
+            allRow.style.setProperty("--level", 0);
+            const allToggle = document.createElement("button");
+            allToggle.className = "category-toggle";
+            allToggle.disabled = true;
+            const allName = document.createElement("div");
+            allName.className = "category-name";
+            allName.textContent = "Все товары";
+            allRow.appendChild(allToggle);
+            allRow.appendChild(allName);
+            allRow.addEventListener("click", () => {
+                selectCategory(null);
+                closeDrawer("categoryDrawer");
+            });
+            allWrapper.appendChild(allRow);
+            fragment.appendChild(allWrapper);
+
+            state.roots.forEach((category) => {
+                fragment.appendChild(renderCategoryItem(category, 0));
+            });
+
+            el.categoryTree.appendChild(fragment);
+        }
+
+        function renderCategoryItem(category, level) {
+            const wrapper = document.createElement("div");
+            wrapper.className = "category-item";
+
+            const row = document.createElement("div");
+            row.className = `category-row${category.id === state.selectedCategoryId ? " active" : ""}`;
+            row.style.setProperty("--level", level);
+
+            const toggle = document.createElement("button");
+            toggle.className = "category-toggle";
+            if (category.children.length) {
+                toggle.textContent = state.expandedCategories.has(category.id) ? "−" : "+";
+            } else {
+                toggle.textContent = "";
+                toggle.disabled = true;
+            }
+
+            toggle.addEventListener("click", (event) => {
+                event.stopPropagation();
+                if (!category.children.length) {
+                    return;
+                }
+                if (state.expandedCategories.has(category.id)) {
+                    state.expandedCategories.delete(category.id);
+                } else {
+                    state.expandedCategories.add(category.id);
+                }
+                renderCategoryTree();
+            });
+
+            const name = document.createElement("div");
+            name.className = "category-name";
+            name.textContent = category.name;
+
+            row.appendChild(toggle);
+            row.appendChild(name);
+
+            row.addEventListener("click", () => {
+                selectCategory(category.id);
+                closeDrawer("categoryDrawer");
+            });
+
+            wrapper.appendChild(row);
+
+            if (category.children.length && state.expandedCategories.has(category.id)) {
+                const childrenWrapper = document.createElement("div");
+                childrenWrapper.className = "category-children";
+                category.children.forEach((child) => {
+                    childrenWrapper.appendChild(renderCategoryItem(child, level + 1));
+                });
+                wrapper.appendChild(childrenWrapper);
+            }
+
+            return wrapper;
+        }
+
+        function applyFilters() {
+            const query = state.searchQuery.trim().toLowerCase();
+            const categorySet = state.selectedCategoryId ? getCategorySet(state.selectedCategoryId) : null;
+
+            state.filteredProducts = state.products.filter((product) => {
+                if (query && !product.searchText.includes(query)) {
+                    return false;
+                }
+                if (categorySet && !categorySet.has(product.categoryId)) {
+                    return false;
+                }
+                return true;
+            });
+
+            state.displayCount = 24;
+            updateStatus();
+            renderProducts();
+        }
+
+        function renderProducts() {
+            el.productsGrid.innerHTML = "";
+            const fragment = document.createDocumentFragment();
+            const visible = state.filteredProducts.slice(0, state.displayCount);
+            visible.forEach((product) => {
+                fragment.appendChild(renderProductCard(product));
+            });
+            el.productsGrid.appendChild(fragment);
+
+            el.emptyState.style.display = visible.length ? "none" : "block";
+            el.loadMoreButton.style.display = state.filteredProducts.length > state.displayCount ? "block" : "none";
+        }
+
+        function renderProductCard(product) {
+            const card = productTemplate.content.firstElementChild.cloneNode(true);
+            const img = card.querySelector(".product-image img");
+            img.src = product.picture || PLACEHOLDER_IMAGE;
+            img.alt = product.name;
+
+            card.querySelector(".product-sku").textContent = product.sku;
+            card.querySelector(".product-name").textContent = product.name;
+
+            const priceValue = computePrice(product.basePrice, state.priceTier);
+            card.querySelector(".product-price").textContent = formatPrice(priceValue);
+            card.querySelector(".product-price-meta").textContent = getPriceMeta(product.basePrice, state.priceTier);
+
+            const stack = card.querySelector(".price-stack");
+            stack.querySelector('[data-tier="minus5"]').textContent = `-5% ${formatPrice(computePrice(product.basePrice, "minus5"))}`;
+            stack.querySelector('[data-tier="minus8"]').textContent = `-8% ${formatPrice(computePrice(product.basePrice, "minus8"))}`;
+            stack.querySelector('[data-tier="minus10"]').textContent = `-10% ${formatPrice(computePrice(product.basePrice, "minus10"))}`;
+
+            const stock = card.querySelector(".product-stock");
+            const addButton = card.querySelector(".add-to-cart");
+            if (!product.available || product.stock <= 0) {
+                stock.textContent = "Нет в наличии";
+                stock.classList.add("low");
+                addButton.disabled = true;
+                card.classList.add("disabled");
+            } else {
+                stock.textContent = `${product.stock} шт`;
+                if (product.stock <= 2) {
+                    stock.classList.add("low");
+                }
+            }
+
+            addButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                addToCart(product.id);
+            });
+
+            return card;
+        }
+
+        function selectCategory(categoryId) {
+            state.selectedCategoryId = categoryId;
+            if (categoryId) {
+                expandCategoryPath(categoryId);
+            }
+            renderTopCategories();
+            renderBreadcrumb();
+            renderCategoryTree();
+            applyFilters();
+        }
+
+        function expandCategoryPath(categoryId) {
+            let current = state.categoriesById[categoryId];
+            while (current) {
+                state.expandedCategories.add(current.id);
+                current = current.parentId ? state.categoriesById[current.parentId] : null;
+            }
+        }
+
+        function getCategorySet(categoryId) {
+            if (!categoryId) {
+                return null;
+            }
+            if (state.categoryDescendants[categoryId]) {
+                return state.categoryDescendants[categoryId];
+            }
+            const set = new Set();
+            const stack = [categoryId];
+            while (stack.length) {
+                const currentId = stack.pop();
+                if (!currentId || set.has(currentId)) {
+                    continue;
+                }
+                set.add(currentId);
+                const children = state.categoriesById[currentId]?.children || [];
+                children.forEach((child) => stack.push(child.id));
+            }
+            state.categoryDescendants[categoryId] = set;
+            return set;
+        }
+
+        function getCategoryPath(categoryId) {
+            const path = [];
+            let current = state.categoriesById[categoryId];
+            while (current) {
+                path.unshift(current);
+                current = current.parentId ? state.categoriesById[current.parentId] : null;
+            }
+            return path;
+        }
+
+        function updateStatus() {
+            el.resultsCount.textContent = `Товаров: ${state.filteredProducts.length}`;
+            const filters = [];
+            if (state.selectedCategoryId) {
+                const path = getCategoryPath(state.selectedCategoryId);
+                if (path.length) {
+                    filters.push(`категория: ${shorten(path[path.length - 1].name, 24)}`);
+                }
+            }
+            if (state.searchQuery) {
+                filters.push(`поиск: ${shorten(state.searchQuery, 24)}`);
+            }
+            el.activeFilters.textContent = filters.length ? `Фильтры: ${filters.join(", ")}` : "Фильтры: нет";
+        }
+
+        function setPriceTier(tier) {
+            if (!PRICE_TIERS[tier]) {
+                return;
+            }
+            state.priceTier = tier;
+            localStorage.setItem(STORAGE_KEYS.priceTier, tier);
+            updatePriceModeUI();
+            renderProducts();
+            renderCart();
+            updateCartBadge();
+        }
+
+        function updatePriceModeUI() {
+            el.priceModes.querySelectorAll(".price-chip").forEach((chip) => {
+                chip.classList.toggle("active", chip.dataset.tier === state.priceTier);
+            });
+        }
+
+        function addToCart(productId) {
+            const product = state.productsById[productId];
+            if (!product || !product.available || product.stock <= 0) {
+                return;
+            }
+            const existing = state.cart.find((item) => item.productId === productId);
+            if (existing) {
+                existing.qty += 1;
+            } else {
+                state.cart.push({ productId, qty: 1 });
+            }
+            saveCart();
+            updateCartBadge();
+            showToast("Добавлено в корзину");
+        }
+
+        function renderCart() {
+            el.cartItems.innerHTML = "";
+            if (!state.cart.length) {
+                el.cartItems.innerHTML = '<div class="empty-state" style="display:block">Корзина пуста.</div>';
+                el.cartTotal.textContent = formatPrice(0);
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            state.cart.forEach((item) => {
+                const product = state.productsById[item.productId];
+                if (!product) {
+                    return;
+                }
+
+                const row = document.createElement("div");
+                row.className = "cart-item";
+
+                const info = document.createElement("div");
+                info.className = "cart-item-info";
+                const name = document.createElement("div");
+                name.className = "cart-item-name";
+                name.textContent = product.name;
+                const sku = document.createElement("div");
+                sku.className = "cart-item-sku";
+                sku.textContent = product.sku;
+                info.appendChild(name);
+                info.appendChild(sku);
+
+                const controls = document.createElement("div");
+                controls.className = "cart-item-controls";
+                const minus = document.createElement("button");
+                minus.className = "qty-btn";
+                minus.type = "button";
+                minus.textContent = "−";
+                const qty = document.createElement("span");
+                qty.textContent = item.qty;
+                const plus = document.createElement("button");
+                plus.className = "qty-btn";
+                plus.type = "button";
+                plus.textContent = "+";
+
+                minus.addEventListener("click", () => updateCartQty(item.productId, item.qty - 1));
+                plus.addEventListener("click", () => updateCartQty(item.productId, item.qty + 1));
+
+                controls.appendChild(minus);
+                controls.appendChild(qty);
+                controls.appendChild(plus);
+
+                const price = document.createElement("div");
+                price.className = "cart-item-price";
+                price.textContent = formatPrice(computePrice(product.basePrice, state.priceTier) * item.qty);
+
+                row.appendChild(info);
+                row.appendChild(controls);
+                row.appendChild(price);
+
+                fragment.appendChild(row);
+            });
+
+            el.cartItems.appendChild(fragment);
+            el.cartTotal.textContent = formatPrice(calculateCartTotal());
+        }
+
+        function updateCartQty(productId, qty) {
+            const item = state.cart.find((entry) => entry.productId === productId);
+            if (!item) {
+                return;
+            }
+            if (qty <= 0) {
+                state.cart = state.cart.filter((entry) => entry.productId !== productId);
+            } else {
+                item.qty = qty;
+            }
+            saveCart();
+            renderCart();
+            updateCartBadge();
+        }
+
+        function calculateCartTotal() {
+            return state.cart.reduce((sum, item) => {
+                const product = state.productsById[item.productId];
+                if (!product) {
+                    return sum;
+                }
+                const price = computePrice(product.basePrice, state.priceTier);
+                if (!Number.isFinite(price)) {
+                    return sum;
+                }
+                return sum + price * item.qty;
+            }, 0);
+        }
+
+        function updateCartBadge() {
+            const total = calculateCartTotal();
+            el.cartButton.textContent = `🛒 Корзина: ${formatPrice(total)}`;
+        }
+
+        function placeOrder() {
+            if (!state.cart.length) {
+                showToast("Корзина пуста");
+                return;
+            }
+
+            const orderId = createOrderId();
+            const createdAt = new Date().toISOString();
+            const total = calculateCartTotal();
+            const items = state.cart.map((item) => {
+                const product = state.productsById[item.productId];
+                return {
+                    productId: item.productId,
+                    sku: product?.sku,
+                    name: product?.name,
+                    qty: item.qty,
+                    price: computePrice(product?.basePrice, state.priceTier)
+                };
+            });
+
+            const order = {
+                id: orderId,
+                createdAt,
+                status: "В обработке",
+                priceTier: state.priceTier,
+                total,
+                items
+            };
+
+            state.orders.unshift(order);
+            saveOrders();
+            sendOrderToTelegram(order);
+
+            state.cart = [];
+            saveCart();
+            renderCart();
+            renderHistory();
+            updateCartBadge();
+            closeDrawer("cartDrawer");
+            showToast("Заказ создан");
+        }
+
+        function renderHistory() {
+            el.historyList.innerHTML = "";
+            if (!state.orders.length) {
+                el.historyList.innerHTML = '<div class="empty-state" style="display:block">Пока нет заказов.</div>';
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            state.orders.forEach((order) => {
+                const card = document.createElement("div");
+                card.className = "order-card";
+
+                const header = document.createElement("div");
+                header.className = "order-header";
+                const title = document.createElement("div");
+                title.textContent = `Заказ ${order.id}`;
+                const status = document.createElement("span");
+                status.className = "order-status";
+                status.textContent = order.status || "В обработке";
+                header.appendChild(title);
+                header.appendChild(status);
+
+                const meta = document.createElement("div");
+                meta.className = "order-meta";
+                const date = new Date(order.createdAt).toLocaleString("ru-RU");
+                const itemsCount = order.items.reduce((sum, item) => sum + (item.qty || 0), 0);
+                meta.textContent = `${date} • ${itemsCount} позиций • ${formatPrice(order.total)} • ${PRICE_TIERS[order.priceTier]?.label || ""}`;
+
+                card.appendChild(header);
+                card.appendChild(meta);
+                fragment.appendChild(card);
+            });
+
+            el.historyList.appendChild(fragment);
+        }
+
+        function sendOrderToTelegram(order) {
+            const payload = {
+                type: "order",
+                orderId: order.id,
+                createdAt: order.createdAt,
+                priceTier: order.priceTier,
+                total: order.total,
+                user: state.user,
+                items: order.items
+            };
+
+            const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+            if (tg && tg.sendData) {
+                tg.sendData(JSON.stringify(payload));
+            } else {
+                console.log("Telegram payload", payload);
+            }
+        }
+
+        function openDrawer(id) {
+            const drawer = document.getElementById(id);
+            if (drawer) {
+                drawer.classList.add("open");
+            }
+        }
+
+        function closeDrawer(id) {
+            const drawer = document.getElementById(id);
+            if (drawer) {
+                drawer.classList.remove("open");
+            }
+        }
+
+        function showLoading(isVisible, text) {
+            if (text) {
+                const label = el.loadingOverlay.querySelector(".loading-card");
+                label.textContent = text;
+            }
+            el.loadingOverlay.style.display = isVisible ? "flex" : "none";
+        }
+
+        function showToast(message) {
+            if (!message) {
+                return;
+            }
+            el.toast.textContent = message;
+            el.toast.classList.add("show");
+            clearTimeout(el.toast._timer);
+            el.toast._timer = setTimeout(() => {
+                el.toast.classList.remove("show");
+            }, 2600);
+        }
+
+        function getText(parent, selector) {
+            const element = parent.querySelector(selector);
+            return element ? element.textContent.trim() : "";
+        }
+
+        function formatPrice(value) {
+            if (!Number.isFinite(value)) {
+                return "—";
+            }
+            return `${currencyFormatter.format(value)} ₽`;
+        }
+
+        function computePrice(base, tier) {
+            if (!Number.isFinite(base)) {
+                return null;
+            }
+            const discount = PRICE_TIERS[tier]?.discount || 0;
+            return Math.round(base * (1 - discount));
+        }
+
+        function getPriceMeta(base, tier) {
+            if (!Number.isFinite(base)) {
+                return "";
+            }
+            if (tier === "base") {
+                return "Базовая цена";
+            }
+            return `База: ${formatPrice(base)}`;
+        }
+
+        function createCategoryChip(label, id) {
+            const chip = document.createElement("button");
+            chip.type = "button";
+            const isActive = id ? id === state.selectedCategoryId : !state.selectedCategoryId;
+            chip.className = `category-chip${isActive ? " active" : ""}`;
+            chip.textContent = label;
+            chip.addEventListener("click", () => selectCategory(id));
+            return chip;
+        }
+
+        function createOrderId() {
+            const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
+            const rnd = Math.floor(Math.random() * 90 + 10);
+            return `DX-${stamp}-${rnd}`;
+        }
+
+        function handleAuthAction() {
+            if (state.telegramAvailable && state.user) {
+                showToast("Telegram авторизация уже активна");
+                return;
+            }
+            const name = window.prompt("Имя для демо-доступа");
+            if (!name || !name.trim()) {
+                return;
+            }
+            state.user = {
+                id: `demo-${Date.now()}`,
+                name: name.trim()
+            };
+            saveUser();
+            updateAuthUI();
+            showToast("Демо-доступ активирован");
+        }
+
+        function updateAuthUI() {
+            if (state.user) {
+                el.authName.textContent = state.user.name;
+                el.authButton.textContent = state.telegramAvailable ? "Telegram OK" : "Сменить";
+                el.authButton.disabled = state.telegramAvailable;
+            } else {
+                el.authName.textContent = "Гость";
+                el.authButton.textContent = state.telegramAvailable ? "Войти" : "Демо вход";
+                el.authButton.disabled = false;
+            }
+        }
+
+        function saveCart() {
+            localStorage.setItem(STORAGE_KEYS.cart, JSON.stringify(state.cart));
+        }
+
+        function saveOrders() {
+            localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(state.orders));
+        }
+
+        function saveUser() {
+            localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(state.user));
+        }
+
+        function safeParse(raw, fallback) {
+            if (!raw) {
+                return fallback;
+            }
+            try {
+                return JSON.parse(raw) ?? fallback;
+            } catch (error) {
+                return fallback;
+            }
+        }
+
+        function shorten(text, maxLength) {
+            if (!text || text.length <= maxLength) {
+                return text;
+            }
+            return `${text.slice(0, maxLength)}...`;
+        }
+    </script>
+</body>
+</html>
