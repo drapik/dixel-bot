@@ -5,30 +5,44 @@ MVP для B2B-клиентов с поиском, вложенными кате
 Что сделано:
 - Поиск по артикулу и названию
 - Дерево категорий с вложенностью (поддержка 3-6 уровней и больше)
-- Переключение ценовых режимов: база, -5%, -8%, -10%
-- Корзина, отправка заказа в Telegram, история заказов (статусы-заглушки)
-- Автоавторизация в Telegram WebApp, демо-вход в браузере
+- Цены скрыты до авторизации, выдаются сервером по назначенному прайс-листу
+- Корзина, отправка заказа в Telegram, история заказов в профиле
+- Автоавторизация в Telegram WebApp без демо-входа
+- Серверный API каталога и цен с проверкой initData
 
 Файлы:
 - `index.html` — интерфейс и логика
-- `dixel_complete.yml` — каталог (грузится на клиенте)
+- `server/index.js` — сервер каталога и цен
+- `scripts/import-yml.js` — импорт YML в Supabase
+- `dixel_complete.yml` — источник каталога для импорта
 - `supabase_schema.sql` — схема БД для Supabase
+- `package.json` — зависимости и команды
 
 ## Локальный запуск
 1. Откройте папку проекта.
-2. Запустите локальный сервер:
+2. Создайте `.env` на основе `.env.example` и заполните ключи Supabase и Telegram.
+   При нестабильной сети можно настроить `UPSERT_BATCH_SIZE`, `UPSERT_PRODUCT_BATCH_SIZE`, `UPSERT_RETRIES`, `UPSERT_RETRY_MS`.
+3. Установите зависимости:
    ```powershell
-   python -m http.server 8000
+   npm install
    ```
-3. Откройте `http://localhost:8000`.
+4. Импортируйте каталог:
+   ```powershell
+   npm run import-yml
+   ```
+5. Запустите сервер:
+   ```powershell
+   npm start
+   ```
+6. Откройте `http://localhost:3000`.
 
 ## Публикация в Telegram Mini App
-1. Разместите `index.html` и `dixel_complete.yml` на HTTPS-хостинге (Vercel/Cloudflare Pages/GitHub Pages).
+1. Разверните `server/index.js` на Node-хостинге (Render/Railway/VPS).
 2. Создайте бота в BotFather (`/newbot`).
 3. Установите домен WebApp (`/setdomain`).
 4. Добавьте кнопку Web App в меню бота:
    - `/setmenubutton`
-   - URL: `https://ваш-домен/index.html`
+   - URL: `https://ваш-домен/`
 5. Откройте бота в Telegram, запустите Mini App.
 
 Заказ отправляется в бота через `Telegram.WebApp.sendData()`. В боте ловите `web_app_data`:
@@ -44,9 +58,10 @@ bot.on("message", (ctx) => {
 
 ## Supabase (бэкэнд)
 1. Откройте Supabase SQL Editor и выполните `supabase_schema.sql`.
-2. Импортируйте категории и товары из YML (можно через CSV/скрипт).
-3. Для продакшена: проверяйте `initData` Telegram на сервере и пишите в Supabase через service role. Не храните service key в браузере.
+2. Импортируйте категории и товары из YML (`npm run import-yml`).
+3. Назначайте прайс-лист клиентам через `customers.price_tier`.
+4. Для продакшена: проверяйте `initData` Telegram на сервере и работайте с Supabase через service role. Не храните service key в браузере.
 
 ## Примечания
-- `dixel_complete.yml` должен лежать рядом с `index.html`.
-- История заказов сейчас хранится в `localStorage` (можно заменить на Supabase позже).
+- `dixel_complete.yml` используется только для импорта и не нужен на фронтенде.
+- История заказов пока хранится в `localStorage`.

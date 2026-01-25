@@ -7,6 +7,9 @@ create table public.customers (
   username text,
   first_name text,
   last_name text,
+  price_tier text,
+  constraint customers_price_tier_check
+    check (price_tier in ('base', 'minus5', 'minus8', 'minus10')),
   created_at timestamptz not null default now()
 );
 
