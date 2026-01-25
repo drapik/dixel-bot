@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
             margin: 0;
@@ -952,11 +953,14 @@
 
         function initTelegram() {
             const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+            console.log("🔍 [DEBUG] Telegram WebApp:", tg ? "доступен" : "НЕ доступен");
             if (tg) {
                 tg.ready();
                 tg.expand();
+                console.log("🔍 [DEBUG] initData:", tg.initData ? "есть" : "НЕТ");
             }
             const tgUser = tg && tg.initDataUnsafe ? tg.initDataUnsafe.user : null;
+            console.log("🔍 [DEBUG] Telegram User:", tgUser);
             if (tgUser) {
                 const fullName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ");
                 state.user = {
@@ -964,6 +968,7 @@
                     name: fullName || tgUser.username || `ID ${tgUser.id}`,
                     username: tgUser.username || null
                 };
+                console.log("✅ [DEBUG] User установлен:", state.user);
                 saveUser();
             }
         }
@@ -987,7 +992,9 @@
         async function fetchPricing() {
             const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
             const initData = tg ? tg.initData : "";
+            console.log("🔍 [DEBUG] fetchPricing - initData:", initData ? "присутствует" : "ОТСУТСТВУЕТ");
             if (!initData) {
+                console.warn("⚠️ [DEBUG] Нет initData - цены НЕ будут загружены");
                 state.pricingEnabled = false;
                 state.pricesById = {};
                 renderProducts();
@@ -1000,6 +1007,7 @@
             }
 
             try {
+                console.log("🔍 [DEBUG] Отправка запроса /api/pricing...");
                 const response = await fetch("/api/pricing", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -1012,6 +1020,8 @@
                     throw new Error("Pricing fetch failed");
                 }
                 const payload = await response.json();
+                console.log("🔍 [DEBUG] Ответ /api/pricing:", payload);
+                console.log("🔍 [DEBUG] Авторизован:", payload.authorized);
                 state.pricingEnabled = Boolean(payload.authorized);
                 const prices = payload.prices || {};
                 const normalized = {};
@@ -1510,6 +1520,10 @@
                 showToast("Цены доступны после авторизации");
                 return;
             }
+            if (!state.user || !state.user.id) {
+                showToast("Ошибка авторизации. Перезагрузите приложение.");
+                return;
+            }
             if (!state.cart.length) {
                 showToast("Корзина пуста");
                 return;
@@ -1559,7 +1573,13 @@
             el.profileHistory.innerHTML = "";
             const currentUserId = state.user ? String(state.user.id) : null;
             const orders = currentUserId
-                ? state.orders.filter((order) => String(order.userId) === currentUserId)
+                ? state.orders.filter((order) => {
+                    // Показываем заказы текущего пользователя + заказы без userId (созданы до авторизации)
+                    if (order.userId === null || order.userId === undefined) {
+                        return true;
+                    }
+                    return String(order.userId) === currentUserId;
+                })
                 : [];
             if (!orders.length) {
                 el.profileHistory.innerHTML = '<div class="empty-state" style="display:block">Пока нет заказов.</div>';
