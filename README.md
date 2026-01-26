@@ -30,6 +30,10 @@ MVP для B2B-клиентов с поиском, вложенными кате
    ```powershell
    npm run import-yml
    ```
+   Очистка перед импортом (удаляет текущие товары и категории, либо задайте `IMPORT_WIPE=1`):
+   ```powershell
+   npm run import-yml -- --wipe
+   ```
 5. Запустите сервер:
    ```powershell
    npm start

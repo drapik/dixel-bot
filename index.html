@@ -1097,7 +1097,7 @@
             state.categoriesById = categoriesById;
             state.roots = roots;
             state.categoryDescendants = {};
-            state.expandedCategories = new Set(roots.map((category) => category.id));
+            state.expandedCategories = new Set();
             const productsById = {};
             const normalized = products
                 .map((item) => {
@@ -1124,7 +1124,8 @@
                         searchText: `${sku} ${name}`.toLowerCase()
                     };
                 })
-                .filter(Boolean);
+                .filter(Boolean)
+                .filter((product) => product.stock > 0);
 
             normalized.forEach((product) => {
                 productsById[product.id] = product;

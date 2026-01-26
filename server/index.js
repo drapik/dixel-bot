@@ -41,16 +41,28 @@ app.get("/dixel_complete.yml", (req, res) => {
     res.status(404).end();
 });
 
-async function fetchAllProducts(supabase, fields = "external_id, category_external_id, sku, name, stock, picture_url") {
+async function fetchAllProducts(
+    supabase,
+    fields = "external_id, category_external_id, sku, name, stock, picture_url",
+    options = {}
+) {
     const PAGE_SIZE = 1000;
     let allProducts = [];
     let from = 0;
+    const minStock = options.minStock;
+    const hasMinStock = Number.isFinite(minStock);
 
     while (true) {
-        const { data, error } = await supabase
+        let query = supabase
             .from("products")
             .select(fields)
             .range(from, from + PAGE_SIZE - 1);
+
+        if (hasMinStock) {
+            query = query.gt("stock", minStock);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
             throw error;
@@ -86,7 +98,11 @@ app.get("/api/catalog", async (req, res) => {
             throw categoriesError;
         }
 
-        const products = await fetchAllProducts(supabase);
+        const products = await fetchAllProducts(
+            supabase,
+            "external_id, category_external_id, sku, name, stock, picture_url",
+            { minStock: 0 }
+        );
         console.log(`📦 [SERVER] Загружено товаров: ${products.length}`);
 
         const payload = {
