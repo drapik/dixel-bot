@@ -84,6 +84,46 @@ async function fetchAllProducts(
     return allProducts;
 }
 
+function buildHiddenCategorySet(categories) {
+    const byId = {};
+    (categories || []).forEach((category) => {
+        if (category && category.external_id) {
+            byId[String(category.external_id)] = category;
+        }
+    });
+
+    const hiddenById = {};
+    const visiting = new Set();
+
+    const resolveHidden = (id) => {
+        if (!id || !byId[id]) {
+            return false;
+        }
+        if (hiddenById[id] !== undefined) {
+            return hiddenById[id];
+        }
+        if (visiting.has(id)) {
+            hiddenById[id] = false;
+            return false;
+        }
+        visiting.add(id);
+        const category = byId[id];
+        const parentId = category.parent_external_id ? String(category.parent_external_id) : null;
+        const hidden = Boolean(category.hidden) || (parentId ? resolveHidden(parentId) : false);
+        visiting.delete(id);
+        hiddenById[id] = hidden;
+        return hidden;
+    };
+
+    const hiddenIds = new Set();
+    Object.keys(byId).forEach((id) => {
+        if (resolveHidden(id)) {
+            hiddenIds.add(id);
+        }
+    });
+    return hiddenIds;
+}
+
 app.get("/api/catalog", async (req, res) => {
     if (!supabase) {
         return res.status(500).json({ error: "Supabase not configured" });
@@ -92,11 +132,16 @@ app.get("/api/catalog", async (req, res) => {
     try {
         const { data: categories, error: categoriesError } = await supabase
             .from("categories")
-            .select("external_id, parent_external_id, name");
+            .select("external_id, parent_external_id, name, hidden");
 
         if (categoriesError) {
             throw categoriesError;
         }
+
+        const hiddenCategoryIds = buildHiddenCategorySet(categories);
+        const visibleCategories = (categories || []).filter(
+            (category) => !hiddenCategoryIds.has(category.external_id)
+        );
 
         const products = await fetchAllProducts(
             supabase,
@@ -105,13 +150,21 @@ app.get("/api/catalog", async (req, res) => {
         );
         console.log(`📦 [SERVER] Загружено товаров: ${products.length}`);
 
+        const visibleProducts = (products || []).filter((product) => {
+            const categoryId = product.category_external_id;
+            if (!categoryId) {
+                return true;
+            }
+            return !hiddenCategoryIds.has(categoryId);
+        });
+
         const payload = {
-            categories: (categories || []).map((category) => ({
+            categories: visibleCategories.map((category) => ({
                 id: category.external_id,
                 parentId: category.parent_external_id,
                 name: category.name
             })),
-            products: (products || []).map((product) => ({
+            products: visibleProducts.map((product) => ({
                 id: product.external_id,
                 categoryId: product.category_external_id,
                 sku: product.sku,

@@ -18,6 +18,7 @@ create table public.categories (
   external_id text not null unique,
   parent_external_id text,
   name text not null,
+  hidden boolean not null default false,
   created_at timestamptz not null default now()
 );
 

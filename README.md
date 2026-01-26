@@ -30,6 +30,14 @@ MVP для B2B-клиентов с поиском, вложенными кате
    ```powershell
    npm run import-yml
    ```
+   Только YML (без обращения к API поставщика):
+   ```powershell
+   npm run import-yml -- --no-api
+   ```
+   Вайп + только YML:
+   ```powershell
+   npm run import-yml -- --wipe --no-api
+   ```
    Очистка перед импортом (удаляет текущие товары и категории, либо задайте `IMPORT_WIPE=1`):
    ```powershell
    npm run import-yml -- --wipe
@@ -63,8 +71,9 @@ bot.on("message", (ctx) => {
 ## Supabase (бэкэнд)
 1. Откройте Supabase SQL Editor и выполните `supabase_schema.sql`.
 2. Импортируйте категории и товары из YML (`npm run import-yml`).
-3. Назначайте прайс-лист клиентам через `customers.price_tier`.
-4. Для продакшена: проверяйте `initData` Telegram на сервере и работайте с Supabase через service role. Не храните service key в браузере.
+3. Скрывайте категории, выставляя `categories.hidden = true` (дочерние скрываются автоматически). Обычный импорт сохраняет `hidden`, а `--wipe` сбрасывает.
+4. Назначайте прайс-лист клиентам через `customers.price_tier`.
+5. Для продакшена: проверяйте `initData` Telegram на сервере и работайте с Supabase через service role. Не храните service key в браузере.
 
 ## Примечания
 - `dixel_complete.yml` используется только для импорта и не нужен на фронтенде.

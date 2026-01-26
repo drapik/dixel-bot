@@ -312,12 +312,49 @@
             justify-content: center;
             overflow: hidden;
             border: 1px solid rgba(0, 255, 242, 0.1);
+            position: relative;
         }
 
         .product-image img {
             width: 100%;
             height: 100%;
             object-fit: cover;
+            transition: opacity 0.2s ease;
+        }
+
+        .product-image.is-placeholder {
+            background:
+                radial-gradient(120% 120% at 0% 0%, rgba(0, 255, 242, 0.18), rgba(21, 25, 34, 0.95) 55%),
+                linear-gradient(135deg, rgba(191, 0, 255, 0.08), rgba(0, 255, 242, 0.08));
+            border-color: rgba(0, 255, 242, 0.2);
+        }
+
+        .product-image.is-placeholder::before {
+            content: "";
+            position: absolute;
+            inset: 16%;
+            border-radius: 18px;
+            border: 1px dashed rgba(0, 255, 242, 0.35);
+            box-shadow: 0 0 16px rgba(0, 255, 242, 0.18);
+        }
+
+        .product-image.is-placeholder::after {
+            content: "Нет фото";
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.25em;
+            color: rgba(0, 255, 242, 0.75);
+            text-transform: uppercase;
+            text-shadow: 0 0 12px rgba(0, 255, 242, 0.35);
+        }
+
+        .product-image.is-placeholder img {
+            opacity: 0;
         }
 
         .product-sku {
@@ -830,13 +867,25 @@
     </template>
 
     <script>
-        const PLACEHOLDER_IMAGE = "https://via.placeholder.com/200x200/151922/00fff2?text=DIXEL";
+        const PLACEHOLDER_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+        const EMPTY_PICTURE_RE = /^(null|undefined|none|n\/a)$/i;
 
         const STORAGE_KEYS = {
             cart: "dixel_cart",
             orders: "dixel_orders",
             user: "dixel_user"
         };
+
+        function normalizePictureUrl(value) {
+            if (value == null) {
+                return null;
+            }
+            const raw = String(value).trim();
+            if (!raw || EMPTY_PICTURE_RE.test(raw)) {
+                return null;
+            }
+            return raw;
+        }
 
         const state = {
             categoriesById: {},
@@ -1108,7 +1157,7 @@
                     }
                     const sku = item?.sku ? String(item.sku) : id;
                     const categoryId = item?.categoryId ? String(item.categoryId) : null;
-                    const picture = item?.picture ? String(item.picture) : null;
+                    const picture = normalizePictureUrl(item?.picture);
                     const stockValue = Number.parseFloat(item?.stock);
                     const stock = Number.isFinite(stockValue) ? Math.round(stockValue) : 0;
                     const available = typeof item?.available === "boolean" ? item.available : stock > 0;
@@ -1281,8 +1330,19 @@
         function renderProductCard(product) {
             const card = productTemplate.content.firstElementChild.cloneNode(true);
             const img = card.querySelector(".product-image img");
-            img.src = product.picture || PLACEHOLDER_IMAGE;
+            const imageWrap = img.closest(".product-image");
+            const picture = normalizePictureUrl(product.picture);
+            img.src = picture || PLACEHOLDER_IMAGE;
             img.alt = product.name;
+            img.loading = "lazy";
+            img.decoding = "async";
+            imageWrap.classList.toggle("is-placeholder", !picture);
+            img.onerror = () => {
+                if (img.src !== PLACEHOLDER_IMAGE) {
+                    img.src = PLACEHOLDER_IMAGE;
+                }
+                imageWrap.classList.add("is-placeholder");
+            };
 
             card.querySelector(".product-sku").textContent = product.sku;
             card.querySelector(".product-name").textContent = product.name;
