@@ -14,7 +14,8 @@ MVP для B2B-клиентов с поиском, вложенными кате
 - `index.html` — интерфейс и логика
 - `server/index.js` — сервер каталога и цен
 - `scripts/import-yml.js` — импорт YML в Supabase
-- `dixel_complete.yml` — источник каталога для импорта
+- `scripts/fetch-yml.js` — скачивание YML от поставщика
+- `scripts/import-schedule.js` — автозапуск импорта по расписанию
 - `supabase_schema.sql` — схема БД для Supabase
 - `package.json` — зависимости и команды
 
@@ -26,27 +27,27 @@ MVP для B2B-клиентов с поиском, вложенными кате
    ```powershell
    npm install
    ```
-4. Импортируйте каталог:
+4. (Опционально) скачайте YML файл поставщика:
+   ```powershell
+   npm run fetch-yml
+   ```
+5. Импортируйте каталог:
    ```powershell
    npm run import-yml
-   ```
-   Только YML (без обращения к API поставщика):
-   ```powershell
-   npm run import-yml -- --no-api
-   ```
-   Вайп + только YML:
-   ```powershell
-   npm run import-yml -- --wipe --no-api
    ```
    Очистка перед импортом (удаляет текущие товары и категории, либо задайте `IMPORT_WIPE=1`):
    ```powershell
    npm run import-yml -- --wipe
    ```
-5. Запустите сервер:
+6. (Опционально) Запустите автоимпорт каждые 30 минут:
+   ```powershell
+   npm run import-schedule
+   ```
+7. Запустите сервер:
    ```powershell
    npm start
    ```
-6. Откройте `http://localhost:3000`.
+8. Откройте `http://localhost:3000`.
 
 ## Публикация в Telegram Mini App
 1. Разверните `server/index.js` на Node-хостинге (Render/Railway/VPS).
@@ -76,5 +77,5 @@ bot.on("message", (ctx) => {
 5. Для продакшена: проверяйте `initData` Telegram на сервере и работайте с Supabase через service role. Не храните service key в браузере.
 
 ## Примечания
-- `dixel_complete.yml` используется только для импорта и не нужен на фронтенде.
+- `SUPPLIER_YML_URL` — единственный источник каталога, сайт поставщика больше не используется.
 - История заказов пока хранится в `localStorage`.

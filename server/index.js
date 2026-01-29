@@ -84,6 +84,40 @@ async function fetchAllProducts(
     return allProducts;
 }
 
+async function fetchAllCategories(
+    supabase,
+    fields = "external_id, parent_external_id, name, hidden"
+) {
+    const PAGE_SIZE = 1000;
+    let allCategories = [];
+    let from = 0;
+
+    while (true) {
+        const { data, error } = await supabase
+            .from("categories")
+            .select(fields)
+            .range(from, from + PAGE_SIZE - 1);
+
+        if (error) {
+            throw error;
+        }
+
+        if (!data || data.length === 0) {
+            break;
+        }
+
+        allCategories = allCategories.concat(data);
+
+        if (data.length < PAGE_SIZE) {
+            break;
+        }
+
+        from += PAGE_SIZE;
+    }
+
+    return allCategories;
+}
+
 function buildHiddenCategorySet(categories) {
     const byId = {};
     (categories || []).forEach((category) => {
@@ -130,13 +164,10 @@ app.get("/api/catalog", async (req, res) => {
     }
 
     try {
-        const { data: categories, error: categoriesError } = await supabase
-            .from("categories")
-            .select("external_id, parent_external_id, name, hidden");
-
-        if (categoriesError) {
-            throw categoriesError;
-        }
+        const categories = await fetchAllCategories(
+            supabase,
+            "external_id, parent_external_id, name, hidden"
+        );
 
         const hiddenCategoryIds = buildHiddenCategorySet(categories);
         const visibleCategories = (categories || []).filter(

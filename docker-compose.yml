@@ -29,6 +29,16 @@ services:
     networks:
       - web
 
+  dixel-importer:
+    build: .
+    container_name: dixel-importer
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["node", "scripts/import-schedule.js"]
+    networks:
+      - web
+
 networks:
   web:
     driver: bridge

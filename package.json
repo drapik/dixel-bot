@@ -5,7 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server/index.js",
-    "import-yml": "node scripts/import-yml.js"
+    "import-yml": "node scripts/import-yml.js",
+    "fetch-yml": "node scripts/fetch-yml.js",
+    "import-schedule": "node scripts/import-schedule.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

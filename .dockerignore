@@ -4,5 +4,4 @@ npm-debug.log
 .gitignore
 README.md
 dixel_complete.yml
-scripts/
 .env.example

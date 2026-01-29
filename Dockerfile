@@ -10,6 +10,7 @@ RUN npm ci --only=production
 
 # Copy application files
 COPY server ./server
+COPY scripts ./scripts
 COPY index.html ./
 COPY .env ./.env
 
