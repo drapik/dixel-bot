@@ -43,12 +43,16 @@ create table public.products (
   base_price numeric(12,2),
   stock integer not null default 0,
   picture_url text,
+  moysklad_product_id uuid,
   created_at timestamptz not null default now()
 );
 
 create index products_category_external_id_idx on public.products(category_external_id);
 create index products_sku_idx on public.products(sku);
 create index products_name_idx on public.products(name);
+create unique index products_moysklad_product_id_unique
+  on public.products (moysklad_product_id)
+  where moysklad_product_id is not null;
 
 create view public.product_prices as
 select
@@ -71,10 +75,17 @@ create table public.orders (
   status text not null default 'pending',
   price_tier text not null default 'minus5',
   total_amount numeric(12,2) not null default 0,
+  moysklad_exported boolean not null default false,
+  moysklad_order_id uuid,
+  moysklad_export_error text,
   created_at timestamptz not null default now()
 );
 
 create index orders_customer_id_created_at_idx on public.orders(customer_id, created_at desc);
+create index orders_moysklad_exported_idx on public.orders(moysklad_exported);
+create unique index orders_moysklad_order_id_unique
+  on public.orders (moysklad_order_id)
+  where moysklad_order_id is not null;
 
 create table public.order_items (
   id uuid primary key default gen_random_uuid(),

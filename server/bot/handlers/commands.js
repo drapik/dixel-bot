@@ -12,6 +12,7 @@ function registerCommands(bot, config) {
 
         if (ctx.from?.id && Number(ctx.from.id) === Number(config.adminId)) {
             lines.push("/ms_link — привязать контрагентов МойСклад по email (только админ)");
+            lines.push("/ms_link_products — привязать товары к МойСклад по SKU/UUID (только админ)");
         }
 
         if (config.webappUrl) {

@@ -29,6 +29,13 @@ async function requestJson(url, { token, method = "GET" } = {}) {
     return response.json();
 }
 
+function normalizeCode(value) {
+    if (value === undefined || value === null) {
+        return "";
+    }
+    return String(value).trim();
+}
+
 async function fetchAllCounterparties({ token, limit = 1000 } = {}) {
     if (!token) {
         throw new Error("MOYSKLAD_TOKEN не задан");
@@ -63,7 +70,62 @@ async function fetchAllCounterparties({ token, limit = 1000 } = {}) {
     return all;
 }
 
+async function fetchAllProducts({ token, limit = 1000 } = {}) {
+    if (!token) {
+        throw new Error("MOYSKLAD_TOKEN не задан");
+    }
+
+    const all = [];
+    let offset = 0;
+
+    while (true) {
+        const params = new URLSearchParams();
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
+        const url = `${API_ROOT}/entity/product?${params.toString()}`;
+
+        const page = await requestJson(url, { token });
+        const rows = Array.isArray(page?.rows) ? page.rows : [];
+        all.push(...rows);
+
+        const total = Number.parseInt(page?.meta?.size, 10);
+        if (Number.isFinite(total) && all.length >= total) {
+            break;
+        }
+
+        if (!rows.length || rows.length < limit) {
+            break;
+        }
+
+        offset += rows.length;
+    }
+
+    return all;
+}
+
+async function findProductByCode({ token, code }) {
+    if (!token) {
+        throw new Error("MOYSKLAD_TOKEN не задан");
+    }
+
+    const normalized = normalizeCode(code);
+    if (!normalized) {
+        return null;
+    }
+
+    const params = new URLSearchParams();
+    params.set("filter", `code=${normalized}`);
+    params.set("limit", "1");
+    const url = `${API_ROOT}/entity/product?${params.toString()}`;
+
+    const data = await requestJson(url, { token });
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    return rows[0] || null;
+}
+
 module.exports = {
     fetchAllCounterparties,
-    getMoyskladToken
+    fetchAllProducts,
+    getMoyskladToken,
+    findProductByCode
 };

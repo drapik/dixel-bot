@@ -15,6 +15,19 @@ const TELEGRAM_ADMIN_ID = parseChatId(process.env.TELEGRAM_ADMIN_ID) ?? DEFAULT_
 const ORDER_TIMEZONE = String(process.env.ORDER_TIMEZONE || process.env.TZ || "Europe/Moscow").trim();
 
 const { formatOrderMessage } = require("./bot/lib/formatters");
+const {
+    insertOrderWithItems,
+    updateOrderMoyskladStatus,
+    fetchProductMoyskladMap
+} = require("./lib/order-storage");
+const {
+    getMoyskladToken,
+    getStoreId,
+    buildCustomerOrderPayload,
+    createCustomerOrder
+} = require("./lib/moysklad-orders");
+const { ensureMoyskladProductLinks } = require("./lib/moysklad-product-sync");
+const { withRetries } = require("./lib/retry");
 
 const DISCOUNTS = {
     base: 0,
@@ -22,6 +35,9 @@ const DISCOUNTS = {
     minus8: 0.08,
     minus10: 0.1
 };
+
+const MOYSKLAD_ORGANIZATION_ID = "9d1894be-4185-11ed-0a80-0b95001b946e";
+const MOYSKLAD_STORE_NAME = "Основной склад";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -325,6 +341,44 @@ function parseTelegramUser(initData) {
     }
 }
 
+async function exportOrderToMoysklad({ supabase, order, customer }) {
+    const token = getMoyskladToken();
+    if (!token) {
+        throw new Error("MOYSKLAD_TOKEN не задан");
+    }
+
+    const storeId = await getStoreId({ token, name: MOYSKLAD_STORE_NAME });
+    const externalIds = (order?.items || [])
+        .map((item) => (item?.productId ? String(item.productId) : ""))
+        .filter(Boolean);
+    const productMap = await fetchProductMoyskladMap(supabase, externalIds);
+
+    const syncResult = await ensureMoyskladProductLinks({
+        supabase,
+        token,
+        items: order?.items || [],
+        productMap
+    });
+
+    if (syncResult.created.length || syncResult.linked.length) {
+        const createdCount = syncResult.created.length;
+        const linkedCount = syncResult.linked.length;
+        console.log(
+            `[MOYSKLAD] Связка товаров: найдено ${linkedCount}, создано ${createdCount}`
+        );
+    }
+
+    const payload = buildCustomerOrderPayload({
+        order,
+        customer,
+        organizationId: MOYSKLAD_ORGANIZATION_ID,
+        storeId,
+        productMap: syncResult.productMap
+    });
+
+    return createCustomerOrder({ token, payload });
+}
+
 app.post("/api/order", async (req, res) => {
     const initData = req.body?.initData || req.headers["x-telegram-init-data"] || "";
 
@@ -341,8 +395,88 @@ app.post("/api/order", async (req, res) => {
         return res.status(400).json({ ok: false, error: "unsupported payload" });
     }
 
+    if (!supabase) {
+        console.warn("⚠️ [SERVER] Supabase НЕ настроен!");
+        return res.status(500).json({ ok: false, error: "supabase_not_configured" });
+    }
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    if (!items.length) {
+        return res.status(400).json({ ok: false, error: "order items required" });
+    }
+
+    const total = Number(order.total);
+    if (!Number.isFinite(total)) {
+        return res.status(400).json({ ok: false, error: "order total invalid" });
+    }
+
     try {
         const tgUser = parseTelegramUser(initData);
+        const telegramId = tgUser?.id ? Number(tgUser.id) : null;
+        if (!telegramId) {
+            return res.status(400).json({ ok: false, error: "telegram_id_missing" });
+        }
+
+        const { data: customer, error: customerError } = await supabase
+            .from("customers")
+            .select("id, price_tier, moysklad_counterparty_id")
+            .eq("telegram_id", telegramId)
+            .maybeSingle();
+
+        if (customerError) {
+            throw customerError;
+        }
+
+        const orderRecord = await insertOrderWithItems(
+            supabase,
+            { ...order, total, items },
+            customer
+        );
+
+        let moyskladResult = null;
+        let moyskladError = null;
+
+        try {
+            if (!customer) {
+                throw new Error("Клиент не найден в базе");
+            }
+
+            if (!customer.moysklad_counterparty_id) {
+                throw new Error("У клиента не задан moysklad_counterparty_id");
+            }
+
+            moyskladResult = await withRetries(
+                async (attempt) => {
+                    if (attempt > 0) {
+                        console.warn(
+                            `[MOYSKLAD] Повтор выгрузки заказа ${order.orderId || "unknown"} (попытка ${attempt + 1})`
+                        );
+                    }
+
+                    return exportOrderToMoysklad({ supabase, order, customer });
+                },
+                { retries: 3, delayMs: 5000 }
+            );
+
+            await updateOrderMoyskladStatus(supabase, orderRecord.id, {
+                exported: true,
+                msOrderId: moyskladResult?.id || null,
+                errorMessage: null
+            });
+        } catch (error) {
+            moyskladError = error;
+            console.error("[MOYSKLAD] Ошибка выгрузки заказа:", error);
+            try {
+                await updateOrderMoyskladStatus(supabase, orderRecord.id, {
+                    exported: false,
+                    msOrderId: null,
+                    errorMessage: String(error?.message || error)
+                });
+            } catch (updateError) {
+                console.error("[MOYSKLAD] Не удалось обновить статус выгрузки:", updateError);
+            }
+        }
+
         const payload = {
             ...order,
             user: order.user || tgUser || null
@@ -353,7 +487,13 @@ app.post("/api/order", async (req, res) => {
         console.log(
             `✅ [SERVER] Order notified: ${payload.orderId || "unknown"} -> admin ${TELEGRAM_ADMIN_ID}`
         );
-        return res.json({ ok: true });
+        return res.json({
+            ok: true,
+            moysklad: {
+                exported: !moyskladError,
+                orderId: moyskladResult?.id || null
+            }
+        });
     } catch (error) {
         console.error("❌ [SERVER] /api/order failed:", error);
         return res.status(500).json({ ok: false, error: "send_failed" });

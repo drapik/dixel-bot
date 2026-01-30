@@ -10,6 +10,7 @@ services:
       - "traefik.http.routers.dixel-app.rule=Host(`opt-zakaz.dixel.store`)"
       - "traefik.http.routers.dixel-app.entrypoints=http"
       - "traefik.http.services.dixel-app.loadbalancer.server.port=3000"
+      - "traefik.docker.network=proxy"
     networks:
       - web
       - proxy
