@@ -3,6 +3,7 @@ const path = require("path");
 const express = require("express");
 const { createClient } = require("@supabase/supabase-js");
 const nacl = require("tweetnacl");
+const { parseChatId, DEFAULT_ADMIN_ID } = require("./bot/lib/env");
 
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
@@ -10,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const TELEGRAM_ADMIN_ID = Number.parseInt(process.env.TELEGRAM_ADMIN_ID || "", 10) || 314009331;
+const TELEGRAM_ADMIN_ID = parseChatId(process.env.TELEGRAM_ADMIN_ID) ?? DEFAULT_ADMIN_ID;
 const ORDER_TIMEZONE = String(process.env.ORDER_TIMEZONE || process.env.TZ || "Europe/Moscow").trim();
 
 const { formatOrderMessage } = require("./bot/lib/formatters");

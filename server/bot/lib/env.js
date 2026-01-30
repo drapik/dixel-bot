@@ -27,6 +27,6 @@ function getBotConfig() {
 
 module.exports = {
     DEFAULT_ADMIN_ID,
+    parseChatId,
     getBotConfig
 };
-

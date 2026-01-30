@@ -1721,7 +1721,9 @@
                 }
 
                 console.log("Telegram payload", payload);
-                showToast("Заказ создан, но не удалось отправить в Telegram");
+                if (initData || (tg && tg.sendData)) {
+                    showToast("Заказ создан, но не удалось отправить в Telegram");
+                }
             })();
         }
 
