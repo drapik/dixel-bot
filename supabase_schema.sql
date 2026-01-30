@@ -4,14 +4,24 @@ create extension if not exists "pgcrypto";
 create table public.customers (
   id uuid primary key default gen_random_uuid(),
   telegram_id bigint not null unique,
+  email text,
   username text,
   first_name text,
   last_name text,
+  moysklad_counterparty_id uuid,
   price_tier text,
   constraint customers_price_tier_check
     check (price_tier in ('base', 'minus5', 'minus8', 'minus10')),
   created_at timestamptz not null default now()
 );
+
+create unique index customers_email_lower_unique
+  on public.customers (lower(email))
+  where email is not null;
+
+create unique index customers_moysklad_counterparty_id_unique
+  on public.customers (moysklad_counterparty_id)
+  where moysklad_counterparty_id is not null;
 
 create table public.categories (
   id uuid primary key default gen_random_uuid(),

@@ -1,20 +1,4 @@
 services:
-  traefik:
-    image: traefik:v2.11
-    container_name: traefik
-    restart: unless-stopped
-    command:
-      - "--api.insecure=false"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-    ports:
-      - "8080:80"
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    networks:
-      - web
-
   dixel-app:
     build: .
     container_name: dixel-mini-app
@@ -24,10 +8,11 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dixel-app.rule=Host(`opt-zakaz.dixel.store`)"
-      - "traefik.http.routers.dixel-app.entrypoints=web"
+      - "traefik.http.routers.dixel-app.entrypoints=http"
       - "traefik.http.services.dixel-app.loadbalancer.server.port=3000"
     networks:
       - web
+      - proxy
 
   dixel-importer:
     build: .
@@ -52,3 +37,5 @@ services:
 networks:
   web:
     driver: bridge
+  proxy:
+    external: true

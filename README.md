@@ -62,11 +62,13 @@ MVP для B2B-клиентов с поиском, вложенными кате
 - Код: `server/bot/`
 - Запуск локально: `npm run start:bot`
 - Проверка: команда `/ping`
+- Админ: команда `/ms_link` — сопоставить клиентов с контрагентами МойСклад по email (с подтверждением)
 - Уведомления о заказах уходят в `TELEGRAM_ADMIN_ID` (по умолчанию `314009331`)
 - Дата `createdAt` форматируется в `ORDER_TIMEZONE` (по умолчанию `Europe/Moscow`)
 
 ## Supabase (бэкэнд)
 1. Откройте Supabase SQL Editor и выполните `supabase_schema.sql`.
+   Если проект уже создан раньше — выполните миграцию `scripts/supabase/migrations/2026-01-30_customers_email_moysklad.sql`.
 2. Импортируйте категории и товары из YML (`npm run import-yml`).
 3. Скрывайте категории, выставляя `categories.hidden = true` (дочерние скрываются автоматически). Обычный импорт сохраняет `hidden`, а `--wipe` сбрасывает.
 4. Назначайте прайс-лист клиентам через `customers.price_tier`.

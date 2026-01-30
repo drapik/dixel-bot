@@ -10,6 +10,10 @@ function registerCommands(bot, config) {
             "/id — показать ваш Telegram ID"
         ];
 
+        if (ctx.from?.id && Number(ctx.from.id) === Number(config.adminId)) {
+            lines.push("/ms_link — привязать контрагентов МойСклад по email (только админ)");
+        }
+
         if (config.webappUrl) {
             const keyboard = Markup.inlineKeyboard([
                 Markup.button.webApp("Открыть mini app", config.webappUrl)
@@ -31,4 +35,3 @@ function registerCommands(bot, config) {
 }
 
 module.exports = { registerCommands };
-

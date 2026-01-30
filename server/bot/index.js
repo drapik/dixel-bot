@@ -5,6 +5,7 @@ require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });
 
 const { getBotConfig } = require("./lib/env");
 const { registerCommands } = require("./handlers/commands");
+const { registerMoyskladLinking } = require("./handlers/moysklad-link");
 const { registerWebAppHandlers } = require("./handlers/webapp");
 
 const TRUTHY = new Set(["1", "true", "yes", "y", "on"]);
@@ -26,6 +27,7 @@ if (!config.token) {
 const bot = new Telegraf(config.token);
 
 registerCommands(bot, config);
+registerMoyskladLinking(bot, config);
 registerWebAppHandlers(bot, config);
 
 bot.catch((error) => {
