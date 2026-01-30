@@ -51,6 +51,11 @@ if (Test-Path "server") {
     scp -r server "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/"
 }
 
+# Copy scripts directory (used by docker-compose importer)
+if (Test-Path "scripts") {
+    scp -r scripts "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/"
+}
+
 # Deploy on remote server
 Write-Host "🐳 Building and starting Docker containers..." -ForegroundColor Cyan
 

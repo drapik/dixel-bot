@@ -58,16 +58,12 @@ MVP для B2B-клиентов с поиском, вложенными кате
    - URL: `https://ваш-домен/`
 5. Откройте бота в Telegram, запустите Mini App.
 
-Заказ отправляется в бота через `Telegram.WebApp.sendData()`. В боте ловите `web_app_data`:
-```js
-// Пример (Node.js / Telegraf)
-bot.on("message", (ctx) => {
-  if (ctx.message.web_app_data) {
-    const payload = JSON.parse(ctx.message.web_app_data.data);
-    console.log(payload);
-  }
-});
-```
+Заказ отправляется в бота через `Telegram.WebApp.sendData()`. В проекте уже есть бот на Telegraf:
+- Код: `server/bot/`
+- Запуск локально: `npm run start:bot`
+- Проверка: команда `/ping`
+- Уведомления о заказах уходят в `TELEGRAM_ADMIN_ID` (по умолчанию `314009331`)
+- Дата `createdAt` форматируется в `ORDER_TIMEZONE` (по умолчанию `Europe/Moscow`)
 
 ## Supabase (бэкэнд)
 1. Откройте Supabase SQL Editor и выполните `supabase_schema.sql`.

@@ -1687,11 +1687,42 @@
             };
 
             const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-            if (tg && tg.sendData) {
-                tg.sendData(JSON.stringify(payload));
-            } else {
+            const initData = tg ? tg.initData : "";
+
+            (async () => {
+                // 1) Основной путь: отправляем заказ на наш сервер, он уведомляет админа через Bot API
+                if (initData) {
+                    try {
+                        const response = await fetch("/api/order", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ initData, order: payload })
+                        });
+                        if (response.ok) {
+                            const result = await response.json().catch(() => null);
+                            if (result && result.ok) {
+                                return;
+                            }
+                        }
+                        console.warn("⚠️ [ORDER] /api/order failed:", response.status);
+                    } catch (error) {
+                        console.warn("⚠️ [ORDER] /api/order error:", error);
+                    }
+                }
+
+                // 2) Fallback: отправка напрямую в бота через WebApp.sendData (если доступно)
+                if (tg && tg.sendData) {
+                    try {
+                        tg.sendData(JSON.stringify(payload));
+                        return;
+                    } catch (error) {
+                        console.warn("⚠️ [ORDER] tg.sendData error:", error);
+                    }
+                }
+
                 console.log("Telegram payload", payload);
-            }
+                showToast("Заказ создан, но не удалось отправить в Telegram");
+            })();
         }
 
         function openDrawer(id) {

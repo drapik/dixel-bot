@@ -64,6 +64,9 @@ ssh root@192.168.1.95 'cd /opt/dixel-mini-app && docker compose ps'
 # Посмотреть логи
 ssh root@192.168.1.95 'cd /opt/dixel-mini-app && docker compose logs -f'
 
+# Посмотреть логи бота
+ssh root@192.168.1.95 'cd /opt/dixel-mini-app && docker compose logs -f dixel-bot'
+
 # Проверить работу Traefik
 ssh root@192.168.1.95 'curl -I http://localhost:8080 -H "Host: opt-zakaz.dixel.store"'
 ```

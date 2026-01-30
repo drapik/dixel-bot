@@ -10,6 +10,10 @@ const PORT = process.env.PORT || 3000;
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TELEGRAM_ADMIN_ID = Number.parseInt(process.env.TELEGRAM_ADMIN_ID || "", 10) || 314009331;
+const ORDER_TIMEZONE = String(process.env.ORDER_TIMEZONE || process.env.TZ || "Europe/Moscow").trim();
+
+const { formatOrderMessage } = require("./bot/lib/formatters");
 
 const DISCOUNTS = {
     base: 0,
@@ -29,6 +33,31 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 if (!TELEGRAM_BOT_TOKEN) {
     console.warn("TELEGRAM_BOT_TOKEN is missing; pricing API will stay locked.");
+}
+
+async function sendTelegramMessage(chatId, text) {
+    if (!TELEGRAM_BOT_TOKEN) {
+        throw new Error("TELEGRAM_BOT_TOKEN is missing");
+    }
+    if (!chatId) {
+        throw new Error("Telegram chatId is missing");
+    }
+
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            chat_id: chatId,
+            text
+        })
+    });
+
+    if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`Telegram sendMessage failed (${response.status}): ${body}`.slice(0, 500));
+    }
+
+    return response.json().catch(() => null);
 }
 
 const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
@@ -294,6 +323,41 @@ function parseTelegramUser(initData) {
         return null;
     }
 }
+
+app.post("/api/order", async (req, res) => {
+    const initData = req.body?.initData || req.headers["x-telegram-init-data"] || "";
+
+    if (!verifyTelegramInitData(initData)) {
+        return res.status(401).json({ ok: false, error: "unauthorized" });
+    }
+
+    const order = req.body?.order;
+    if (!order || typeof order !== "object") {
+        return res.status(400).json({ ok: false, error: "order is required" });
+    }
+
+    if (order.type !== "order") {
+        return res.status(400).json({ ok: false, error: "unsupported payload" });
+    }
+
+    try {
+        const tgUser = parseTelegramUser(initData);
+        const payload = {
+            ...order,
+            user: order.user || tgUser || null
+        };
+        const message = formatOrderMessage(payload, { timeZone: ORDER_TIMEZONE });
+
+        await sendTelegramMessage(TELEGRAM_ADMIN_ID, message);
+        console.log(
+            `✅ [SERVER] Order notified: ${payload.orderId || "unknown"} -> admin ${TELEGRAM_ADMIN_ID}`
+        );
+        return res.json({ ok: true });
+    } catch (error) {
+        console.error("❌ [SERVER] /api/order failed:", error);
+        return res.status(500).json({ ok: false, error: "send_failed" });
+    }
+});
 
 app.post("/api/pricing", async (req, res) => {
     const initData = req.body?.initData || req.headers["x-telegram-init-data"] || "";

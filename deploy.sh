@@ -26,7 +26,6 @@ echo "📤 Copying files to remote server..."
 rsync -avz --exclude='node_modules' \
     --exclude='.git' \
     --exclude='dixel_complete.yml' \
-    --exclude='scripts' \
     --exclude='README.md' \
     ./ ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/
 

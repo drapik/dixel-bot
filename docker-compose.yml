@@ -39,6 +39,16 @@ services:
     networks:
       - web
 
+  dixel-bot:
+    build: .
+    container_name: dixel-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["node", "server/bot/index.js"]
+    networks:
+      - web
+
 networks:
   web:
     driver: bridge
