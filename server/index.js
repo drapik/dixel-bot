@@ -18,7 +18,9 @@ const { formatOrderMessage } = require("./bot/lib/formatters");
 const {
     insertOrderWithItems,
     updateOrderMoyskladStatus,
-    fetchProductMoyskladMap
+    updateOrderStatusByMoyskladOrderId,
+    fetchProductMoyskladMap,
+    fetchCustomerOrders
 } = require("./lib/order-storage");
 const {
     getMoyskladToken,
@@ -26,6 +28,10 @@ const {
     buildCustomerOrderPayload,
     createCustomerOrder
 } = require("./lib/moysklad-orders");
+const {
+    extractRows,
+    resolveEventStatus
+} = require("./lib/moysklad-order-status-sync");
 const { ensureMoyskladProductLinks } = require("./lib/moysklad-product-sync");
 const { withRetries } = require("./lib/retry");
 
@@ -427,6 +433,10 @@ app.post("/api/order", async (req, res) => {
             throw customerError;
         }
 
+        if (!customer?.id) {
+            return res.status(403).json({ ok: false, error: "customer_not_found" });
+        }
+
         const orderRecord = await insertOrderWithItems(
             supabase,
             { ...order, total, items },
@@ -437,10 +447,6 @@ app.post("/api/order", async (req, res) => {
         let moyskladError = null;
 
         try {
-            if (!customer) {
-                throw new Error("Клиент не найден в базе");
-            }
-
             if (!customer.moysklad_counterparty_id) {
                 throw new Error("У клиента не задан moysklad_counterparty_id");
             }
@@ -477,18 +483,31 @@ app.post("/api/order", async (req, res) => {
             }
         }
 
+        let notifyError = null;
         const payload = {
             ...order,
             user: order.user || tgUser || null
         };
         const message = formatOrderMessage(payload, { timeZone: ORDER_TIMEZONE });
 
-        await sendTelegramMessage(TELEGRAM_ADMIN_ID, message);
-        console.log(
-            `✅ [SERVER] Order notified: ${payload.orderId || "unknown"} -> admin ${TELEGRAM_ADMIN_ID}`
-        );
+        try {
+            await sendTelegramMessage(TELEGRAM_ADMIN_ID, message);
+            console.log(
+                `✅ [SERVER] Order notified: ${payload.orderId || "unknown"} -> admin ${TELEGRAM_ADMIN_ID}`
+            );
+        } catch (error) {
+            notifyError = error;
+            console.error("❌ [SERVER] Ошибка уведомления Telegram:", error);
+        }
+
         return res.json({
             ok: true,
+            order: {
+                id: orderRecord.id
+            },
+            notification: {
+                sent: !notifyError
+            },
             moysklad: {
                 exported: !moyskladError,
                 orderId: moyskladResult?.id || null
@@ -497,6 +516,136 @@ app.post("/api/order", async (req, res) => {
     } catch (error) {
         console.error("❌ [SERVER] /api/order failed:", error);
         return res.status(500).json({ ok: false, error: "send_failed" });
+    }
+});
+
+app.post("/api/moysklad/webhook/customerorder", async (req, res) => {
+    if (!supabase) {
+        return res.status(500).json({ ok: false, error: "supabase_not_configured" });
+    }
+
+    const rows = extractRows(req.body);
+    if (!rows.length) {
+        return res.status(400).json({ ok: false, error: "empty_webhook_payload" });
+    }
+
+    const token = getMoyskladToken();
+    let processed = 0;
+    let updated = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const row of rows) {
+        processed += 1;
+        try {
+            const { orderId, rawStateName, mappedStatus } = await resolveEventStatus({ row, token });
+
+            if (!orderId) {
+                skipped += 1;
+                console.warn(`[MOYSKLAD-WEBHOOK] Пропуск события #${processed}: не найден id заказа`);
+                continue;
+            }
+
+            if (!mappedStatus) {
+                skipped += 1;
+                console.warn(
+                    `[MOYSKLAD-WEBHOOK] Пропуск события #${processed}: нет статуса для заказа ${orderId}`
+                );
+                continue;
+            }
+
+            const result = await updateOrderStatusByMoyskladOrderId(supabase, orderId, mappedStatus);
+            if (!result.updated) {
+                skipped += 1;
+                console.warn(
+                    `[MOYSKLAD-WEBHOOK] Пропуск события #${processed}: заказ ${orderId} не найден в local orders`
+                );
+                continue;
+            }
+
+            updated += 1;
+            console.log(
+                `[MOYSKLAD-WEBHOOK] Заказ ${orderId} обновлен: "${rawStateName}" -> "${mappedStatus}"`
+            );
+        } catch (error) {
+            errors += 1;
+            console.error(`[MOYSKLAD-WEBHOOK] Ошибка события #${processed}:`, error);
+        }
+    }
+
+    return res.json({
+        ok: true,
+        processed,
+        updated,
+        skipped,
+        errors
+    });
+});
+
+app.get("/api/orders", async (req, res) => {
+    const initDataHeader = req.headers["x-telegram-init-data"];
+    const initData = typeof initDataHeader === "string" ? initDataHeader : "";
+    const rawLimit = Number.parseInt(String(req.query?.limit || ""), 10);
+    const rawOffset = Number.parseInt(String(req.query?.offset || ""), 10);
+    const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(50, rawLimit)) : 5;
+    const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
+
+    if (!verifyTelegramInitData(initData)) {
+        return res.status(401).json({ ok: false, error: "unauthorized" });
+    }
+
+    if (!supabase) {
+        return res.status(500).json({ ok: false, error: "supabase_not_configured" });
+    }
+
+    try {
+        const tgUser = parseTelegramUser(initData);
+        const telegramId = tgUser?.id ? Number(tgUser.id) : null;
+        if (!telegramId) {
+            return res.status(400).json({ ok: false, error: "telegram_id_missing" });
+        }
+
+        const { data: customer, error: customerError } = await supabase
+            .from("customers")
+            .select("id")
+            .eq("telegram_id", telegramId)
+            .maybeSingle();
+
+        if (customerError) {
+            throw customerError;
+        }
+
+        if (!customer?.id) {
+            return res.json({
+                ok: true,
+                orders: [],
+                pagination: {
+                    limit,
+                    offset,
+                    hasMore: false,
+                    nextOffset: offset
+                }
+            });
+        }
+
+        const { orders, hasMore } = await fetchCustomerOrders(supabase, customer.id, {
+            limit,
+            offset
+        });
+
+        return res.json({
+            ok: true,
+            orders,
+            pagination: {
+                limit,
+                offset,
+                hasMore,
+                nextOffset: offset + orders.length
+            }
+        });
+    } catch (error) {
+        console.error("❌ [SERVER] /api/orders failed:", error);
+        return res.status(500).json({ ok: false, error: "orders_fetch_failed" });
     }
 });
 

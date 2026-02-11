@@ -702,6 +702,56 @@
             color: var(--text-secondary);
         }
 
+        .profile-history-loading {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .history-skeleton {
+            height: 64px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 255, 242, 0.12);
+            background: linear-gradient(
+                90deg,
+                rgba(0, 255, 242, 0.06) 0%,
+                rgba(0, 255, 242, 0.16) 50%,
+                rgba(0, 255, 242, 0.06) 100%
+            );
+            background-size: 220% 100%;
+            animation: profileHistoryShimmer 1.1s linear infinite;
+        }
+
+        .history-loading-more {
+            padding: 10px 0;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+
+        .profile-load-more {
+            width: 100%;
+            margin: 8px 0 0;
+            display: none;
+        }
+
+        .profile-error {
+            display: block;
+            color: #ff9494;
+            font-size: 12px;
+            text-align: center;
+            padding: 10px 0;
+        }
+
+        @keyframes profileHistoryShimmer {
+            from {
+                background-position: 0% 0;
+            }
+            to {
+                background-position: 220% 0;
+            }
+        }
+
         .loading-overlay {
             position: fixed;
             inset: 0;
@@ -843,6 +893,7 @@
                 </div>
                 <div class="profile-section-title">История заказов</div>
                 <div id="profileHistory"></div>
+                <button class="btn btn-load profile-load-more" id="profileLoadMore" type="button">Показать ещё 5</button>
             </div>
         </div>
     </div>
@@ -869,10 +920,10 @@
     <script>
         const PLACEHOLDER_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
         const EMPTY_PICTURE_RE = /^(null|undefined|none|n\/a)$/i;
+        const PROFILE_PAGE_SIZE = 5;
 
         const STORAGE_KEYS = {
             cart: "dixel_cart",
-            orders: "dixel_orders",
             user: "dixel_user"
         };
 
@@ -900,7 +951,14 @@
             pricesById: {},
             pricingEnabled: false,
             cart: [],
-            orders: [],
+            profileOrders: [],
+            profileOrdersOffset: 0,
+            profileOrdersHasMore: false,
+            profileOrdersLoading: false,
+            profileOrdersLoadingMore: false,
+            profileOrdersLoaded: false,
+            profileOrdersError: "",
+            profileOrdersRequestId: 0,
             user: null,
             displayCount: 24
         };
@@ -925,6 +983,7 @@
             orderButton: document.getElementById("orderButton"),
             profileDrawer: document.getElementById("profileDrawer"),
             profileHistory: document.getElementById("profileHistory"),
+            profileLoadMore: document.getElementById("profileLoadMore"),
             loadingOverlay: document.getElementById("loadingOverlay"),
             toast: document.getElementById("toast")
         };
@@ -966,13 +1025,16 @@
             });
             el.profileButton.addEventListener("click", () => {
                 renderProfile();
-                renderHistory();
                 openDrawer("profileDrawer");
+                loadProfileOrders({ reset: true });
             });
             el.orderButton.addEventListener("click", placeOrder);
             el.loadMoreButton.addEventListener("click", () => {
                 state.displayCount += 24;
                 renderProducts();
+            });
+            el.profileLoadMore.addEventListener("click", () => {
+                loadProfileOrders();
             });
 
             document.querySelectorAll(".drawer").forEach((drawer) => {
@@ -990,11 +1052,11 @@
 
         function loadStoredState() {
             state.cart = safeParse(localStorage.getItem(STORAGE_KEYS.cart), []);
-            state.orders = safeParse(localStorage.getItem(STORAGE_KEYS.orders), []);
             const savedUser = safeParse(localStorage.getItem(STORAGE_KEYS.user), null);
             if (savedUser) {
                 state.user = savedUser;
             }
+            localStorage.removeItem("dixel_orders");
             localStorage.removeItem("dixel_price_tier");
             state.pricingEnabled = false;
             state.pricesById = {};
@@ -1576,7 +1638,7 @@
             el.cartButton.textContent = `🛒 Корзина: ${formatPrice(total)}`;
         }
 
-        function placeOrder() {
+        async function placeOrder() {
             if (!canShowPrices()) {
                 showToast("Цены доступны после авторизации");
                 return;
@@ -1611,61 +1673,107 @@
             const order = {
                 id: orderId,
                 createdAt,
-                status: "В обработке",
                 total,
                 items,
-                userId: state.user ? state.user.id : null
             };
 
-            state.orders.unshift(order);
-            saveOrders();
-            sendOrderToTelegram(order);
+            const result = await sendOrderToTelegram(order);
+            if (!result.ok) {
+                showToast(result.error || "Не удалось создать заказ. Повторите попытку.");
+                return;
+            }
 
             state.cart = [];
             saveCart();
             renderCart();
-            renderHistory();
             updateCartBadge();
             closeDrawer("cartDrawer");
             showToast("Заказ создан");
+
+            if (el.profileDrawer.classList.contains("open")) {
+                loadProfileOrders({ reset: true });
+            }
+        }
+
+        function mapOrderStatus(status) {
+            const raw = String(status || "").trim();
+            const normalized = raw.toLowerCase();
+            if (normalized === "новый") {
+                return "Новый";
+            }
+            if (normalized === "в работе") {
+                return "В работе";
+            }
+            if (normalized === "собран на пвз") {
+                return "Собран на ПВЗ";
+            }
+            if (normalized === "отгружен") {
+                return "Отгружен";
+            }
+            if (normalized === "pending") {
+                return "В обработке";
+            }
+            if (normalized === "done") {
+                return "Завершен";
+            }
+            if (normalized === "canceled" || normalized === "cancelled") {
+                return "Отменен";
+            }
+            return raw || "В обработке";
         }
 
         function renderHistory() {
             el.profileHistory.innerHTML = "";
-            const currentUserId = state.user ? String(state.user.id) : null;
-            const orders = currentUserId
-                ? state.orders.filter((order) => {
-                    // Показываем заказы текущего пользователя + заказы без userId (созданы до авторизации)
-                    if (order.userId === null || order.userId === undefined) {
-                        return true;
-                    }
-                    return String(order.userId) === currentUserId;
-                })
-                : [];
-            if (!orders.length) {
+            el.profileLoadMore.style.display = "none";
+
+            if (!state.user || !state.user.id) {
+                el.profileHistory.innerHTML = '<div class="empty-state" style="display:block">Не удалось определить пользователя.</div>';
+                return;
+            }
+
+            if (state.profileOrdersLoading && !state.profileOrders.length) {
+                el.profileHistory.innerHTML = `
+                    <div class="profile-history-loading">
+                        <div class="history-skeleton"></div>
+                        <div class="history-skeleton"></div>
+                        <div class="history-skeleton"></div>
+                    </div>
+                `;
+                return;
+            }
+
+            if (state.profileOrdersError && !state.profileOrders.length) {
+                el.profileHistory.innerHTML = `<div class="profile-error">${state.profileOrdersError}</div>`;
+                return;
+            }
+
+            if (!state.profileOrders.length) {
                 el.profileHistory.innerHTML = '<div class="empty-state" style="display:block">Пока нет заказов.</div>';
                 return;
             }
 
             const fragment = document.createDocumentFragment();
-            orders.forEach((order) => {
+            state.profileOrders.forEach((order) => {
                 const card = document.createElement("div");
                 card.className = "order-card";
 
                 const header = document.createElement("div");
                 header.className = "order-header";
                 const title = document.createElement("div");
-                title.textContent = `Заказ ${order.id}`;
+                title.textContent = `Заказ ${shortOrderId(order.id)}`;
                 const status = document.createElement("span");
                 status.className = "order-status";
-                status.textContent = order.status || "В обработке";
+                status.textContent = mapOrderStatus(order.status);
                 header.appendChild(title);
                 header.appendChild(status);
 
                 const meta = document.createElement("div");
                 meta.className = "order-meta";
-                const date = new Date(order.createdAt).toLocaleString("ru-RU");
-                const itemsCount = order.items.reduce((sum, item) => sum + (item.qty || 0), 0);
+                const date = order.createdAt
+                    ? new Date(order.createdAt).toLocaleString("ru-RU")
+                    : "Дата неизвестна";
+                const items = Array.isArray(order.items) ? order.items : [];
+                const itemsCount = items.reduce((sum, item) => sum + (item.qty || 0), 0);
                 meta.textContent = `${date} • ${itemsCount} позиций • ${formatPrice(order.total)}`;
 
                 card.appendChild(header);
@@ -1674,9 +1782,143 @@
             });
 
             el.profileHistory.appendChild(fragment);
+
+            if (state.profileOrdersLoadingMore) {
+                const loadingMore = document.createElement("div");
+                loadingMore.className = "history-loading-more";
+                loadingMore.textContent = "Загрузка заказов...";
+                el.profileHistory.appendChild(loadingMore);
+            }
+
+            if (state.profileOrdersHasMore) {
+                el.profileLoadMore.style.display = "block";
+                el.profileLoadMore.disabled = Boolean(state.profileOrdersLoadingMore);
+                el.profileLoadMore.textContent = state.profileOrdersLoadingMore
+                    ? "Загрузка..."
+                    : `Показать ещё ${PROFILE_PAGE_SIZE}`;
+            }
         }
 
-        function sendOrderToTelegram(order) {
+        function shortOrderId(orderId) {
+            const value = String(orderId || "");
+            if (!value) {
+                return "—";
+            }
+            if (value.length <= 8) {
+                return value;
+            }
+            return `${value.slice(0, 8)}...`;
+        }
+
+        async function loadProfileOrders({ reset = false } = {}) {
+            if (!state.user || !state.user.id) {
+                state.profileOrders = [];
+                state.profileOrdersOffset = 0;
+                state.profileOrdersHasMore = false;
+                state.profileOrdersLoaded = true;
+                state.profileOrdersError = "";
+                renderHistory();
+                return;
+            }
+
+            if (reset) {
+                state.profileOrders = [];
+                state.profileOrdersOffset = 0;
+                state.profileOrdersHasMore = false;
+                state.profileOrdersError = "";
+                state.profileOrdersLoaded = false;
+                state.profileOrdersLoading = true;
+                state.profileOrdersLoadingMore = false;
+            } else {
+                if (!state.profileOrdersLoaded || !state.profileOrdersHasMore || state.profileOrdersLoadingMore) {
+                    return;
+                }
+                state.profileOrdersLoadingMore = true;
+                state.profileOrdersError = "";
+            }
+            renderHistory();
+
+            const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+            const initData = tg ? tg.initData : "";
+            const requestId = state.profileOrdersRequestId + 1;
+            state.profileOrdersRequestId = requestId;
+            if (!initData) {
+                state.profileOrdersLoading = false;
+                state.profileOrdersLoadingMore = false;
+                state.profileOrdersLoaded = true;
+                state.profileOrdersError = "Не удалось загрузить заказы: нет Telegram-сессии.";
+                renderHistory();
+                return;
+            }
+
+            try {
+                const offset = reset ? 0 : state.profileOrdersOffset;
+                const response = await fetch(
+                    `/api/orders?limit=${PROFILE_PAGE_SIZE}&offset=${offset}`,
+                    {
+                        method: "GET",
+                        headers: {
+                            "x-telegram-init-data": initData
+                        },
+                        cache: "no-store"
+                    }
+                );
+
+                if (!response.ok) {
+                    const errorPayload = await response.json().catch(() => null);
+                    if (response.status === 401) {
+                        throw new Error("unauthorized");
+                    }
+                    throw new Error(errorPayload?.error || `HTTP ${response.status}`);
+                }
+
+                const payload = await response.json();
+                if (!payload?.ok) {
+                    throw new Error(payload?.error || "orders_fetch_failed");
+                }
+
+                if (requestId !== state.profileOrdersRequestId) {
+                    return;
+                }
+
+                const nextOrders = Array.isArray(payload.orders) ? payload.orders : [];
+                const mergedOrders = reset
+                    ? nextOrders
+                    : state.profileOrders.concat(nextOrders);
+
+                state.profileOrders = mergedOrders;
+                state.profileOrdersOffset = mergedOrders.length;
+                state.profileOrdersHasMore = Boolean(payload?.pagination?.hasMore);
+                state.profileOrdersLoaded = true;
+                state.profileOrdersError = "";
+            } catch (error) {
+                if (requestId !== state.profileOrdersRequestId) {
+                    return;
+                }
+                console.error("❌ [PROFILE] Не удалось загрузить заказы:", error);
+                if (String(error?.message || "") === "unauthorized") {
+                    state.profileOrdersError = "Сессия Telegram истекла. Перезагрузите мини-приложение.";
+                } else {
+                    state.profileOrdersError = "Не удалось загрузить заказы. Проверьте соединение и попробуйте снова.";
+                }
+                showToast("Не удалось загрузить историю заказов");
+                if (reset) {
+                    state.profileOrders = [];
+                    state.profileOrdersOffset = 0;
+                    state.profileOrdersHasMore = false;
+                }
+                state.profileOrdersLoaded = true;
+            } finally {
+                if (requestId !== state.profileOrdersRequestId) {
+                    return;
+                }
+                state.profileOrdersLoading = false;
+                state.profileOrdersLoadingMore = false;
+                renderHistory();
+            }
+        }
+
+        async function sendOrderToTelegram(order) {
             const payload = {
                 type: "order",
                 orderId: order.id,
@@ -1688,43 +1930,33 @@
 
             const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
             const initData = tg ? tg.initData : "";
+            if (!initData) {
+                return { ok: false, error: "Не удалось подтвердить Telegram-сессию." };
+            }
 
-            (async () => {
-                // 1) Основной путь: отправляем заказ на наш сервер, он уведомляет админа через Bot API
-                if (initData) {
-                    try {
-                        const response = await fetch("/api/order", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ initData, order: payload })
-                        });
-                        if (response.ok) {
-                            const result = await response.json().catch(() => null);
-                            if (result && result.ok) {
-                                return;
-                            }
-                        }
-                        console.warn("⚠️ [ORDER] /api/order failed:", response.status);
-                    } catch (error) {
-                        console.warn("⚠️ [ORDER] /api/order error:", error);
+            try {
+                const response = await fetch("/api/order", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ initData, order: payload })
+                });
+                if (!response.ok) {
+                    const errorPayload = await response.json().catch(() => null);
+                    if (errorPayload?.error === "customer_not_found") {
+                        return { ok: false, error: "Ваш Telegram не привязан к клиенту. Обратитесь к менеджеру." };
                     }
+                    return { ok: false, error: "Сервер не принял заказ. Попробуйте еще раз." };
                 }
 
-                // 2) Fallback: отправка напрямую в бота через WebApp.sendData (если доступно)
-                if (tg && tg.sendData) {
-                    try {
-                        tg.sendData(JSON.stringify(payload));
-                        return;
-                    } catch (error) {
-                        console.warn("⚠️ [ORDER] tg.sendData error:", error);
-                    }
+                const result = await response.json().catch(() => null);
+                if (!result?.ok) {
+                    return { ok: false, error: "Не удалось сохранить заказ в базе." };
                 }
-
-                console.log("Telegram payload", payload);
-                if (initData || (tg && tg.sendData)) {
-                    showToast("Заказ создан, но не удалось отправить в Telegram");
-                }
-            })();
+                return { ok: true };
+            } catch (error) {
+                console.warn("⚠️ [ORDER] /api/order error:", error);
+                return { ok: false, error: "Ошибка сети при отправке заказа." };
+            }
         }
 
         function openDrawer(id) {
@@ -1782,10 +2014,6 @@
 
         function saveCart() {
             localStorage.setItem(STORAGE_KEYS.cart, JSON.stringify(state.cart));
-        }
-
-        function saveOrders() {
-            localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(state.orders));
         }
 
         function saveUser() {
