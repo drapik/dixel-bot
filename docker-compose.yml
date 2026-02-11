@@ -8,7 +8,9 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dixel-app.rule=Host(`opt-zakaz.dixel.store`)"
-      - "traefik.http.routers.dixel-app.entrypoints=http"
+      - "traefik.http.routers.dixel-app.entrypoints=https"
+      - "traefik.http.routers.dixel-app.tls=true"
+      - "traefik.http.routers.dixel-app.tls.certresolver=letsencrypt"
       - "traefik.http.services.dixel-app.loadbalancer.server.port=3000"
       - "traefik.docker.network=proxy"
     networks:

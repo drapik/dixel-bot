@@ -14,7 +14,7 @@ MVP для B2B-клиентов с поиском, вложенными кате
 - `index.html` — интерфейс и логика
 - `server/index.js` — сервер каталога и цен
 - `scripts/import-yml.js` — импорт YML в Supabase
-- `scripts/fetch-yml.js` — скачивание YML от поставщика
+- `scripts/fetch-yml.js` — скачивание файлов поставщика (full/price/stock)
 - `scripts/import-schedule.js` — автозапуск импорта по расписанию
 - `supabase_schema.sql` — схема БД для Supabase
 - `package.json` — зависимости и команды
@@ -27,11 +27,11 @@ MVP для B2B-клиентов с поиском, вложенными кате
    ```powershell
    npm install
    ```
-4. (Опционально) скачайте YML файл поставщика:
+4. (Опционально) скачайте файлы поставщика (full/price/stock):
    ```powershell
    npm run fetch-yml
    ```
-5. Импортируйте каталог:
+5. Импортируйте полный каталог (full):
    ```powershell
    npm run import-yml
    ```
@@ -39,7 +39,11 @@ MVP для B2B-клиентов с поиском, вложенными кате
    ```powershell
    npm run import-yml -- --wipe
    ```
-6. (Опционально) Запустите автоимпорт каждые 30 минут:
+   Легковесные обновления (цены + остатки):
+   ```powershell
+   npm run import-yml -- --delta
+   ```
+6. (Опционально) Запустите автоимпорт: full ночью + price/stock каждые N минут:
    ```powershell
    npm run import-schedule
    ```
@@ -75,5 +79,6 @@ MVP для B2B-клиентов с поиском, вложенными кате
 5. Для продакшена: проверяйте `initData` Telegram на сервере и работайте с Supabase через service role. Не храните service key в браузере.
 
 ## Примечания
-- `SUPPLIER_YML_URL` — единственный источник каталога, сайт поставщика больше не используется.
+- Поставщик отдает 3 файла: `full_catalog.yml` (полный каталог), `price_update.yml` (цены), `stock_update.yml` (остатки).
+- Для импорта используются переменные `SUPPLIER_FULL_YML_URL`, `SUPPLIER_PRICE_YML_URL`, `SUPPLIER_STOCK_YML_URL`.
 - История заказов пока хранится в `localStorage`.
