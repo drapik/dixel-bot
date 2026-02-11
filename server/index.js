@@ -41,6 +41,17 @@ const DISCOUNTS = {
     minus8: 0.08,
     minus10: 0.1
 };
+const CATALOG_DEFAULT_LIMIT = 24;
+const CATALOG_MAX_LIMIT = 50;
+const PRICING_CHUNK_SIZE = 200;
+const CATEGORY_CACHE_TTL_MS = 60 * 1000;
+
+const categoryCache = {
+    loadedAt: 0,
+    categories: [],
+    hiddenCategoryIds: new Set(),
+    visibleCategories: []
+};
 
 const MOYSKLAD_ORGANIZATION_ID = "9d1894be-4185-11ed-0a80-0b95001b946e";
 const MOYSKLAD_STORE_NAME = "Основной склад";
@@ -92,49 +103,6 @@ const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
 app.get("/dixel_complete.yml", (req, res) => {
     res.status(404).end();
 });
-
-async function fetchAllProducts(
-    supabase,
-    fields = "external_id, category_external_id, sku, name, stock, picture_url",
-    options = {}
-) {
-    const PAGE_SIZE = 1000;
-    let allProducts = [];
-    let from = 0;
-    const minStock = options.minStock;
-    const hasMinStock = Number.isFinite(minStock);
-
-    while (true) {
-        let query = supabase
-            .from("products")
-            .select(fields)
-            .range(from, from + PAGE_SIZE - 1);
-
-        if (hasMinStock) {
-            query = query.gt("stock", minStock);
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-            throw error;
-        }
-
-        if (!data || data.length === 0) {
-            break;
-        }
-
-        allProducts = allProducts.concat(data);
-
-        if (data.length < PAGE_SIZE) {
-            break;
-        }
-
-        from += PAGE_SIZE;
-    }
-
-    return allProducts;
-}
 
 async function fetchAllCategories(
     supabase,
@@ -210,53 +178,227 @@ function buildHiddenCategorySet(categories) {
     return hiddenIds;
 }
 
+function parseCatalogLimit(rawValue) {
+    const parsed = Number.parseInt(String(rawValue || ""), 10);
+    if (!Number.isFinite(parsed)) {
+        return CATALOG_DEFAULT_LIMIT;
+    }
+    return Math.max(1, Math.min(CATALOG_MAX_LIMIT, parsed));
+}
+
+function parseCatalogOffset(rawValue) {
+    const parsed = Number.parseInt(String(rawValue || ""), 10);
+    if (!Number.isFinite(parsed)) {
+        return 0;
+    }
+    return Math.max(0, parsed);
+}
+
+function parseCategoryIds(rawValue) {
+    const rawItems = Array.isArray(rawValue)
+        ? rawValue
+        : String(rawValue || "").split(",");
+    return Array.from(
+        new Set(
+            rawItems
+                .map((value) => String(value || "").trim())
+                .filter(Boolean)
+        )
+    );
+}
+
+function parseSearchQuery(rawValue) {
+    return String(rawValue || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 120);
+}
+
+function buildSearchOrFilter(searchQuery) {
+    if (!searchQuery) {
+        return "";
+    }
+
+    const sanitized = searchQuery
+        .replace(/[(),]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (!sanitized) {
+        return "";
+    }
+
+    const pattern = `*${sanitized}*`;
+    return `name.ilike.${pattern},sku.ilike.${pattern}`;
+}
+
+function buildPostgrestInList(values) {
+    const escaped = values.map((value) => {
+        const text = String(value || "")
+            .replace(/\\/g, "\\\\")
+            .replace(/"/g, '\\"');
+        return `"${text}"`;
+    });
+    return `(${escaped.join(",")})`;
+}
+
+function chunkArray(items, chunkSize) {
+    const chunks = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+        chunks.push(items.slice(i, i + chunkSize));
+    }
+    return chunks;
+}
+
+function mapCategoryForCatalog(category) {
+    return {
+        id: category.external_id,
+        parentId: category.parent_external_id,
+        name: category.name
+    };
+}
+
+function mapProductForCatalog(product) {
+    if (!product?.external_id || !product?.name) {
+        return null;
+    }
+    const stock = Number.parseFloat(product.stock);
+    return {
+        id: product.external_id,
+        categoryId: product.category_external_id,
+        sku: product.sku,
+        name: product.name,
+        stock,
+        picture: product.picture_url,
+        available: Number.isFinite(stock) ? stock > 0 : false
+    };
+}
+
+async function getCategorySnapshot(supabase, { forceRefresh = false } = {}) {
+    const now = Date.now();
+    const isFresh = !forceRefresh
+        && categoryCache.loadedAt
+        && now - categoryCache.loadedAt < CATEGORY_CACHE_TTL_MS;
+
+    if (isFresh) {
+        return {
+            hiddenCategoryIds: categoryCache.hiddenCategoryIds,
+            visibleCategories: categoryCache.visibleCategories
+        };
+    }
+
+    const categories = await fetchAllCategories(
+        supabase,
+        "external_id, parent_external_id, name, hidden"
+    );
+    const hiddenCategoryIds = buildHiddenCategorySet(categories);
+    const visibleCategories = (categories || []).filter((category) => {
+        if (!category?.external_id) {
+            return false;
+        }
+        return !hiddenCategoryIds.has(String(category.external_id));
+    });
+
+    categoryCache.loadedAt = now;
+    categoryCache.categories = categories;
+    categoryCache.hiddenCategoryIds = hiddenCategoryIds;
+    categoryCache.visibleCategories = visibleCategories;
+
+    return {
+        hiddenCategoryIds,
+        visibleCategories
+    };
+}
+
 app.get("/api/catalog", async (req, res) => {
     if (!supabase) {
         return res.status(500).json({ error: "Supabase not configured" });
     }
 
+    const limit = parseCatalogLimit(req.query?.limit);
+    const offset = parseCatalogOffset(req.query?.offset);
+    const withCategories = String(req.query?.withCategories || "0") === "1";
+    const searchQuery = parseSearchQuery(req.query?.q);
+    const requestedCategoryIds = parseCategoryIds(req.query?.categoryIds);
+
     try {
-        const categories = await fetchAllCategories(
-            supabase,
-            "external_id, parent_external_id, name, hidden"
+        const { hiddenCategoryIds, visibleCategories } = await getCategorySnapshot(supabase);
+        const visibleRequestedCategoryIds = requestedCategoryIds.filter(
+            (categoryId) => !hiddenCategoryIds.has(categoryId)
         );
 
-        const hiddenCategoryIds = buildHiddenCategorySet(categories);
-        const visibleCategories = (categories || []).filter(
-            (category) => !hiddenCategoryIds.has(category.external_id)
-        );
-
-        const products = await fetchAllProducts(
-            supabase,
-            "external_id, category_external_id, sku, name, stock, picture_url",
-            { minStock: 0 }
-        );
-        console.log(`📦 [SERVER] Загружено товаров: ${products.length}`);
-
-        const visibleProducts = (products || []).filter((product) => {
-            const categoryId = product.category_external_id;
-            if (!categoryId) {
-                return true;
+        if (requestedCategoryIds.length > 0 && !visibleRequestedCategoryIds.length) {
+            const emptyPayload = {
+                products: [],
+                pagination: {
+                    limit,
+                    offset,
+                    hasMore: false,
+                    nextOffset: offset
+                }
+            };
+            if (withCategories) {
+                emptyPayload.categories = visibleCategories.map(mapCategoryForCatalog);
             }
-            return !hiddenCategoryIds.has(categoryId);
-        });
+            return res.json(emptyPayload);
+        }
+
+        let query = supabase
+            .from("products")
+            .select("external_id, category_external_id, sku, name, stock, picture_url")
+            .gt("stock", 0)
+            .order("external_id", { ascending: true })
+            .range(offset, offset + limit);
+
+        const searchOrFilter = buildSearchOrFilter(searchQuery);
+        if (searchOrFilter) {
+            query = query.or(searchOrFilter);
+        }
+
+        if (visibleRequestedCategoryIds.length) {
+            query = query.in("category_external_id", visibleRequestedCategoryIds);
+        } else if (hiddenCategoryIds.size) {
+            query = query.not(
+                "category_external_id",
+                "in",
+                buildPostgrestInList(Array.from(hiddenCategoryIds))
+            );
+        }
+
+        const { data: rawProducts, error } = await query;
+        if (error) {
+            throw error;
+        }
+
+        const products = (rawProducts || [])
+            .filter((product) => {
+                const categoryId = product?.category_external_id
+                    ? String(product.category_external_id)
+                    : "";
+                if (!categoryId) {
+                    return true;
+                }
+                return !hiddenCategoryIds.has(categoryId);
+            })
+            .map(mapProductForCatalog)
+            .filter(Boolean);
+
+        const hasMore = products.length > limit;
+        const pageItems = hasMore ? products.slice(0, limit) : products;
 
         const payload = {
-            categories: visibleCategories.map((category) => ({
-                id: category.external_id,
-                parentId: category.parent_external_id,
-                name: category.name
-            })),
-            products: visibleProducts.map((product) => ({
-                id: product.external_id,
-                categoryId: product.category_external_id,
-                sku: product.sku,
-                name: product.name,
-                stock: product.stock,
-                picture: product.picture_url,
-                available: product.stock > 0
-            }))
+            products: pageItems,
+            pagination: {
+                limit,
+                offset,
+                hasMore,
+                nextOffset: offset + pageItems.length
+            }
         };
+
+        if (withCategories) {
+            payload.categories = visibleCategories.map(mapCategoryForCatalog);
+        }
 
         return res.json(payload);
     } catch (error) {
@@ -651,6 +793,13 @@ app.get("/api/orders", async (req, res) => {
 
 app.post("/api/pricing", async (req, res) => {
     const initData = req.body?.initData || req.headers["x-telegram-init-data"] || "";
+    const productIds = Array.from(
+        new Set(
+            (Array.isArray(req.body?.productIds) ? req.body.productIds : [])
+                .map((value) => String(value || "").trim())
+                .filter(Boolean)
+        )
+    ).slice(0, 5000);
 
     if (!verifyTelegramInitData(initData)) {
         return res.json({ authorized: false, prices: {} });
@@ -708,22 +857,35 @@ app.post("/api/pricing", async (req, res) => {
             }
         }
 
-        // Получаем ВСЕ продукты с пагинацией
-        const products = await fetchAllProducts(supabase, "external_id, base_price");
-        console.log("🔍 [SERVER] Загружено продуктов для цен:", products.length);
+        if (!productIds.length) {
+            return res.json({ authorized: true, prices: {} });
+        }
 
         const discount = DISCOUNTS[customer.price_tier];
         const prices = {};
-        (products || []).forEach((product) => {
-            const base = Number.parseFloat(product.base_price);
-            if (!Number.isFinite(base)) {
-                return;
-            }
-            const price = Math.round(base * (1 - discount));
-            prices[product.external_id] = price;
-        });
+        const chunks = chunkArray(productIds, PRICING_CHUNK_SIZE);
 
-        console.log("✅ [SERVER] Цены рассчитаны:", Object.keys(prices).length);
+        for (const idsChunk of chunks) {
+            const { data: products, error: productsError } = await supabase
+                .from("products")
+                .select("external_id, base_price")
+                .in("external_id", idsChunk);
+
+            if (productsError) {
+                throw productsError;
+            }
+
+            (products || []).forEach((product) => {
+                const base = Number.parseFloat(product.base_price);
+                if (!Number.isFinite(base)) {
+                    return;
+                }
+                const price = Math.round(base * (1 - discount));
+                prices[product.external_id] = price;
+            });
+        }
+
+        console.log("✅ [SERVER] Цены рассчитаны:", Object.keys(prices).length, "из", productIds.length);
         return res.json({ authorized: true, prices });
     } catch (error) {
         console.error("❌ [SERVER] Ошибка в /api/pricing:", error);

@@ -695,6 +695,43 @@
             background: rgba(191, 0, 255, 0.12);
             color: var(--neon-purple);
             font-size: 11px;
+            border: 1px solid rgba(191, 0, 255, 0.35);
+        }
+
+        .order-status.status-new {
+            background: rgba(0, 255, 242, 0.12);
+            color: var(--neon-cyan);
+            border-color: rgba(0, 255, 242, 0.35);
+        }
+
+        .order-status.status-progress {
+            background: rgba(255, 199, 87, 0.14);
+            color: #ffd77a;
+            border-color: rgba(255, 199, 87, 0.4);
+        }
+
+        .order-status.status-pickup {
+            background: rgba(96, 157, 255, 0.15);
+            color: #9cc4ff;
+            border-color: rgba(96, 157, 255, 0.45);
+        }
+
+        .order-status.status-shipped {
+            background: rgba(33, 209, 121, 0.16);
+            color: #79f1b8;
+            border-color: rgba(33, 209, 121, 0.45);
+        }
+
+        .order-status.status-done {
+            background: rgba(33, 209, 121, 0.16);
+            color: #79f1b8;
+            border-color: rgba(33, 209, 121, 0.45);
+        }
+
+        .order-status.status-cancelled {
+            background: rgba(255, 96, 123, 0.14);
+            color: #ff9bb0;
+            border-color: rgba(255, 96, 123, 0.42);
         }
 
         .order-meta {
@@ -741,6 +778,23 @@
             font-size: 12px;
             text-align: center;
             padding: 10px 0;
+        }
+
+        .catalog-loading {
+            display: none;
+            margin-top: 14px;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 255, 242, 0.16);
+            background: rgba(0, 255, 242, 0.05);
+            color: var(--text-secondary);
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .catalog-sentinel {
+            height: 1px;
+            width: 100%;
         }
 
         @keyframes profileHistoryShimmer {
@@ -846,12 +900,10 @@
     <main>
         <div class="products-grid" id="productsGrid"></div>
         <div class="empty-state" id="emptyState">Нет товаров по выбранным условиям.</div>
-        <button class="btn btn-load" id="loadMoreButton" type="button">Показать еще</button>
+        <div class="catalog-loading" id="catalogLoading">Загружаем товары...</div>
+        <div class="catalog-loading" id="catalogLoadingMore">Загружаем ещё товары...</div>
+        <div class="catalog-sentinel" id="catalogSentinel" aria-hidden="true"></div>
     </main>
-
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="loading-card">Загрузка прайса...</div>
-    </div>
 
     <div class="drawer" id="categoryDrawer">
         <div class="drawer-panel">
@@ -921,6 +973,8 @@
         const PLACEHOLDER_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
         const EMPTY_PICTURE_RE = /^(null|undefined|none|n\/a)$/i;
         const PROFILE_PAGE_SIZE = 5;
+        const CATALOG_PAGE_SIZE = 24;
+        const PRICING_REQUEST_CHUNK = 200;
 
         const STORAGE_KEYS = {
             cart: "dixel_cart",
@@ -947,10 +1001,22 @@
             products: [],
             productsById: {},
             filteredProducts: [],
+            loadedProductIds: new Set(),
             searchQuery: "",
             pricesById: {},
             pricingEnabled: false,
+            pricingBlocked: false,
+            pricedProductIds: new Set(),
+            pricingPendingIds: new Set(),
             cart: [],
+            categoriesLoaded: false,
+            catalogOffset: 0,
+            catalogHasMore: true,
+            catalogLoading: false,
+            catalogLoadingMore: false,
+            catalogLoaded: false,
+            catalogRequestId: 0,
+            catalogObserver: null,
             profileOrders: [],
             profileOrdersOffset: 0,
             profileOrdersHasMore: false,
@@ -959,8 +1025,7 @@
             profileOrdersLoaded: false,
             profileOrdersError: "",
             profileOrdersRequestId: 0,
-            user: null,
-            displayCount: 24
+            user: null
         };
 
         const el = {
@@ -974,7 +1039,9 @@
             activeFilters: document.getElementById("activeFilters"),
             productsGrid: document.getElementById("productsGrid"),
             emptyState: document.getElementById("emptyState"),
-            loadMoreButton: document.getElementById("loadMoreButton"),
+            catalogLoading: document.getElementById("catalogLoading"),
+            catalogLoadingMore: document.getElementById("catalogLoadingMore"),
+            catalogSentinel: document.getElementById("catalogSentinel"),
             categoryDrawer: document.getElementById("categoryDrawer"),
             categoryTree: document.getElementById("categoryTree"),
             cartDrawer: document.getElementById("cartDrawer"),
@@ -984,7 +1051,6 @@
             profileDrawer: document.getElementById("profileDrawer"),
             profileHistory: document.getElementById("profileHistory"),
             profileLoadMore: document.getElementById("profileLoadMore"),
-            loadingOverlay: document.getElementById("loadingOverlay"),
             toast: document.getElementById("toast")
         };
 
@@ -995,16 +1061,39 @@
 
         async function init() {
             bindUI();
+            initCatalogObserver();
             loadStoredState();
             initTelegram();
             renderProfile();
-            await loadCatalog();
             renderCategoryTree();
             renderBreadcrumb();
-            applyFilters();
-            await fetchPricing();
+            renderProducts();
+            updateStatus();
+            await applyFilters({ withCategories: true });
             renderHistory();
             updateCartBadge();
+        }
+
+        function initCatalogObserver() {
+            if (!el.catalogSentinel || typeof IntersectionObserver !== "function") {
+                return;
+            }
+            if (state.catalogObserver) {
+                state.catalogObserver.disconnect();
+            }
+            state.catalogObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) {
+                        return;
+                    }
+                    loadCatalogPage();
+                });
+            }, {
+                root: null,
+                rootMargin: "260px 0px",
+                threshold: 0.01
+            });
+            state.catalogObserver.observe(el.catalogSentinel);
         }
 
         function bindUI() {
@@ -1029,10 +1118,6 @@
                 loadProfileOrders({ reset: true });
             });
             el.orderButton.addEventListener("click", placeOrder);
-            el.loadMoreButton.addEventListener("click", () => {
-                state.displayCount += 24;
-                renderProducts();
-            });
             el.profileLoadMore.addEventListener("click", () => {
                 loadProfileOrders();
             });
@@ -1059,7 +1144,20 @@
             localStorage.removeItem("dixel_orders");
             localStorage.removeItem("dixel_price_tier");
             state.pricingEnabled = false;
+            state.pricingBlocked = false;
             state.pricesById = {};
+            state.pricedProductIds = new Set();
+            state.pricingPendingIds = new Set();
+            state.categoriesLoaded = false;
+            state.loadedProductIds = new Set();
+            state.products = [];
+            state.filteredProducts = [];
+            state.catalogOffset = 0;
+            state.catalogHasMore = true;
+            state.catalogLoading = false;
+            state.catalogLoadingMore = false;
+            state.catalogLoaded = false;
+            state.catalogRequestId = 0;
         }
 
         function initTelegram() {
@@ -1100,81 +1198,162 @@
             el.profileTelegram.textContent = handle || state.user.name || `ID ${state.user.id}`;
         }
 
-        async function fetchPricing() {
+        function getTelegramInitData() {
             const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-            const initData = tg ? tg.initData : "";
-            console.log("🔍 [DEBUG] fetchPricing - initData:", initData ? "присутствует" : "ОТСУТСТВУЕТ");
+            return tg ? String(tg.initData || "") : "";
+        }
+
+        function splitIntoChunks(items, chunkSize) {
+            const chunks = [];
+            for (let i = 0; i < items.length; i += chunkSize) {
+                chunks.push(items.slice(i, i + chunkSize));
+            }
+            return chunks;
+        }
+
+        async function fetchPricingForIds(productIds) {
+            if (state.pricingBlocked) {
+                return;
+            }
+
+            const initData = getTelegramInitData();
             if (!initData) {
-                console.warn("⚠️ [DEBUG] Нет initData - цены НЕ будут загружены");
                 state.pricingEnabled = false;
+                state.pricingBlocked = true;
                 state.pricesById = {};
                 renderProducts();
                 renderCart();
                 updateCartBadge();
                 return;
             }
-            if (!state.products.length) {
+
+            const ids = Array.from(
+                new Set(
+                    (Array.isArray(productIds) ? productIds : [])
+                        .map((value) => String(value || "").trim())
+                        .filter(Boolean)
+                )
+            ).filter((id) => !state.pricedProductIds.has(id) && !state.pricingPendingIds.has(id));
+
+            if (!ids.length) {
                 return;
             }
 
+            ids.forEach((id) => state.pricingPendingIds.add(id));
+
             try {
-                console.log("🔍 [DEBUG] Отправка запроса /api/pricing...");
-                const response = await fetch("/api/pricing", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        initData,
-                        productIds: state.products.map((product) => product.id)
-                    })
-                });
-                if (!response.ok) {
-                    throw new Error("Pricing fetch failed");
-                }
-                const payload = await response.json();
-                console.log("🔍 [DEBUG] Ответ /api/pricing:", payload);
-                console.log("🔍 [DEBUG] Авторизован:", payload.authorized);
-                state.pricingEnabled = Boolean(payload.authorized);
-                const prices = payload.prices || {};
-                const normalized = {};
-                Object.keys(prices).forEach((key) => {
-                    const value = Number.parseFloat(prices[key]);
-                    if (Number.isFinite(value)) {
-                        normalized[key] = value;
+                const priceChunks = splitIntoChunks(ids, PRICING_REQUEST_CHUNK);
+                const nextPrices = {};
+                let isAuthorized = true;
+
+                for (const idsChunk of priceChunks) {
+                    const response = await fetch("/api/pricing", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ initData, productIds: idsChunk })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error("Pricing fetch failed");
                     }
-                });
-                state.pricesById = normalized;
-            } catch (error) {
-                console.error(error);
-                state.pricingEnabled = false;
-                state.pricesById = {};
-            }
 
-            renderProducts();
-            renderCart();
-            updateCartBadge();
-        }
+                    const payload = await response.json();
+                    if (!payload?.authorized) {
+                        isAuthorized = false;
+                        break;
+                    }
 
-        async function loadCatalog() {
-            showLoading(true, "Загрузка прайса...");
-            try {
-                const response = await fetch("/api/catalog", { cache: "no-store" });
-                if (!response.ok) {
-                    throw new Error("Catalog fetch failed");
+                    const prices = payload.prices || {};
+                    Object.keys(prices).forEach((key) => {
+                        const value = Number.parseFloat(prices[key]);
+                        if (Number.isFinite(value)) {
+                            nextPrices[key] = value;
+                        }
+                    });
                 }
-                const payload = await response.json();
-                applyCatalog(payload);
+
+                if (!isAuthorized) {
+                    state.pricingEnabled = false;
+                    state.pricingBlocked = true;
+                    state.pricesById = {};
+                    state.pricedProductIds = new Set();
+                    return;
+                }
+
+                state.pricingEnabled = true;
+                state.pricesById = {
+                    ...state.pricesById,
+                    ...nextPrices
+                };
+                ids.forEach((id) => state.pricedProductIds.add(id));
             } catch (error) {
                 console.error(error);
-                showToast("Не удалось загрузить каталог. Проверьте сервер.");
             } finally {
-                showLoading(false);
+                ids.forEach((id) => state.pricingPendingIds.delete(id));
+                renderProducts();
+                renderCart();
+                updateCartBadge();
             }
         }
 
-        function applyCatalog(payload) {
+        function buildCatalogRequestUrl({ offset = 0, withCategories = false } = {}) {
+            const params = new URLSearchParams();
+            params.set("limit", String(CATALOG_PAGE_SIZE));
+            params.set("offset", String(Math.max(0, offset)));
+
+            const query = state.searchQuery.trim();
+            if (query) {
+                params.set("q", query);
+            }
+
+            if (state.selectedCategoryId) {
+                const categoryIds = Array.from(getCategorySet(state.selectedCategoryId));
+                if (categoryIds.length) {
+                    params.set("categoryIds", categoryIds.join(","));
+                }
+            }
+
+            if (withCategories) {
+                params.set("withCategories", "1");
+            }
+
+            return `/api/catalog?${params.toString()}`;
+        }
+
+        function normalizeCatalogProducts(rawProducts) {
+            return (Array.isArray(rawProducts) ? rawProducts : [])
+                .map((item) => {
+                    const id = item?.id ? String(item.id) : "";
+                    const name = item?.name ? String(item.name).trim() : "";
+                    if (!id || !name) {
+                        return null;
+                    }
+                    const sku = item?.sku ? String(item.sku) : id;
+                    const categoryId = item?.categoryId ? String(item.categoryId) : null;
+                    const picture = normalizePictureUrl(item?.picture);
+                    const stockValue = Number.parseFloat(item?.stock);
+                    const stock = Number.isFinite(stockValue) ? Math.round(stockValue) : 0;
+                    const available = typeof item?.available === "boolean" ? item.available : stock > 0;
+
+                    return {
+                        id,
+                        sku,
+                        name,
+                        categoryId,
+                        picture,
+                        available,
+                        stock,
+                        searchText: `${sku} ${name}`.toLowerCase()
+                    };
+                })
+                .filter(Boolean)
+                .filter((product) => product.stock > 0);
+        }
+
+        function applyCatalogCategories(payload) {
             const categories = Array.isArray(payload?.categories) ? payload.categories : [];
-            const products = Array.isArray(payload?.products) ? payload.products : [];
             const categoriesById = {};
+
             categories.forEach((node) => {
                 const id = node?.id ? String(node.id) : "";
                 const parentId = node?.parentId ? String(node.parentId) : null;
@@ -1209,41 +1388,113 @@
             state.roots = roots;
             state.categoryDescendants = {};
             state.expandedCategories = new Set();
-            const productsById = {};
-            const normalized = products
-                .map((item) => {
-                    const id = item?.id ? String(item.id) : "";
-                    const name = item?.name ? String(item.name).trim() : "";
-                    if (!id || !name) {
-                        return null;
+            state.categoriesLoaded = true;
+        }
+
+        async function loadCatalogPage({ reset = false, withCategories = false } = {}) {
+            if (!reset && (state.catalogLoading || !state.catalogHasMore)) {
+                return;
+            }
+
+            const requestId = state.catalogRequestId + 1;
+            state.catalogRequestId = requestId;
+
+            if (reset) {
+                state.catalogOffset = 0;
+                state.catalogHasMore = true;
+                state.catalogLoaded = false;
+                state.products = [];
+                state.filteredProducts = [];
+                state.loadedProductIds = new Set();
+                renderProducts();
+                updateStatus();
+            }
+
+            const offset = reset ? 0 : state.catalogOffset;
+            const requestWithCategories = withCategories || !state.categoriesLoaded;
+
+            state.catalogLoading = true;
+            state.catalogLoadingMore = state.catalogLoaded && !reset;
+            renderCatalogLoadingState();
+
+            try {
+                const response = await fetch(
+                    buildCatalogRequestUrl({
+                        offset,
+                        withCategories: requestWithCategories
+                    }),
+                    { cache: "no-store" }
+                );
+
+                if (!response.ok) {
+                    throw new Error("Catalog fetch failed");
+                }
+
+                const payload = await response.json();
+                if (requestId !== state.catalogRequestId) {
+                    return;
+                }
+
+                if (requestWithCategories && Array.isArray(payload?.categories)) {
+                    applyCatalogCategories(payload);
+                    renderCategoryTree();
+                    renderBreadcrumb();
+                }
+
+                const normalized = normalizeCatalogProducts(payload?.products);
+                const appended = [];
+
+                normalized.forEach((product) => {
+                    state.productsById[product.id] = product;
+                    if (state.loadedProductIds.has(product.id)) {
+                        return;
                     }
-                    const sku = item?.sku ? String(item.sku) : id;
-                    const categoryId = item?.categoryId ? String(item.categoryId) : null;
-                    const picture = normalizePictureUrl(item?.picture);
-                    const stockValue = Number.parseFloat(item?.stock);
-                    const stock = Number.isFinite(stockValue) ? Math.round(stockValue) : 0;
-                    const available = typeof item?.available === "boolean" ? item.available : stock > 0;
+                    state.loadedProductIds.add(product.id);
+                    appended.push(product);
+                });
 
-                    return {
-                        id,
-                        sku,
-                        name,
-                        categoryId,
-                        picture,
-                        available,
-                        stock,
-                        searchText: `${sku} ${name}`.toLowerCase()
-                    };
-                })
-                .filter(Boolean)
-                .filter((product) => product.stock > 0);
+                state.products = reset
+                    ? appended
+                    : state.products.concat(appended);
+                state.filteredProducts = state.products.slice();
 
-            normalized.forEach((product) => {
-                productsById[product.id] = product;
+                const nextOffsetValue = Number.parseInt(
+                    String(payload?.pagination?.nextOffset || ""),
+                    10
+                );
+                state.catalogOffset = Number.isFinite(nextOffsetValue)
+                    ? nextOffsetValue
+                    : offset + normalized.length;
+                state.catalogHasMore = Boolean(payload?.pagination?.hasMore);
+                state.catalogLoaded = true;
+
+                renderProducts();
+                updateStatus();
+                fetchPricingForIds(appended.map((product) => product.id));
+            } catch (error) {
+                if (requestId !== state.catalogRequestId) {
+                    return;
+                }
+                console.error(error);
+                showToast("Не удалось загрузить каталог. Проверьте сервер.");
+            } finally {
+                if (requestId !== state.catalogRequestId) {
+                    return;
+                }
+                state.catalogLoading = false;
+                state.catalogLoadingMore = false;
+                state.catalogLoaded = true;
+                renderCatalogLoadingState();
+                renderProducts();
+                updateStatus();
+            }
+        }
+
+        async function applyFilters({ withCategories = false } = {}) {
+            await loadCatalogPage({
+                reset: true,
+                withCategories: withCategories || !state.categoriesLoaded
             });
-
-            state.products = normalized;
-            state.productsById = productsById;
         }
 
         function renderBreadcrumb() {
@@ -1357,36 +1608,32 @@
             return wrapper;
         }
 
-        function applyFilters() {
-            const query = state.searchQuery.trim().toLowerCase();
-            const categorySet = state.selectedCategoryId ? getCategorySet(state.selectedCategoryId) : null;
-
-            state.filteredProducts = state.products.filter((product) => {
-                if (query && !product.searchText.includes(query)) {
-                    return false;
-                }
-                if (categorySet && !categorySet.has(product.categoryId)) {
-                    return false;
-                }
-                return true;
-            });
-
-            state.displayCount = 24;
-            updateStatus();
-            renderProducts();
+        function renderCatalogLoadingState() {
+            if (el.catalogLoading) {
+                const showInitialLoading = state.catalogLoading && !state.catalogLoaded;
+                el.catalogLoading.style.display = showInitialLoading ? "block" : "none";
+            }
+            if (el.catalogLoadingMore) {
+                const showLoadingMore = state.catalogLoading && state.catalogLoaded && state.catalogLoadingMore;
+                el.catalogLoadingMore.style.display = showLoadingMore ? "block" : "none";
+            }
+            if (el.catalogSentinel) {
+                el.catalogSentinel.style.display = state.catalogHasMore ? "block" : "none";
+            }
         }
 
         function renderProducts() {
             el.productsGrid.innerHTML = "";
             const fragment = document.createDocumentFragment();
-            const visible = state.filteredProducts.slice(0, state.displayCount);
+            const visible = state.filteredProducts;
             visible.forEach((product) => {
                 fragment.appendChild(renderProductCard(product));
             });
             el.productsGrid.appendChild(fragment);
 
-            el.emptyState.style.display = visible.length ? "none" : "block";
-            el.loadMoreButton.style.display = state.filteredProducts.length > state.displayCount ? "block" : "none";
+            const showEmpty = state.catalogLoaded && !state.catalogLoading && !visible.length;
+            el.emptyState.style.display = showEmpty ? "block" : "none";
+            renderCatalogLoadingState();
         }
 
         function renderProductCard(product) {
@@ -1492,7 +1739,8 @@
         }
 
         function updateStatus() {
-            el.resultsCount.textContent = `Товаров: ${state.filteredProducts.length}`;
+            const suffix = state.catalogHasMore ? "+" : "";
+            el.resultsCount.textContent = `Товаров: ${state.filteredProducts.length}${suffix}`;
             const filters = [];
             if (state.selectedCategoryId) {
                 const path = getCategoryPath(state.selectedCategoryId);
@@ -1722,6 +1970,26 @@
             return raw || "В обработке";
         }
 
+        function getOrderStatusClass(status) {
+            const normalized = String(status || "").trim().toLowerCase();
+            if (normalized === "новый" || normalized === "pending") {
+                return "status-new";
+            }
+            if (normalized === "в работе" || normalized === "в сборке" || normalized === "в сборку доукомплектовать") {
+                return "status-progress";
+            }
+            if (normalized === "собран на пвз") {
+                return "status-pickup";
+            }
+            if (normalized === "отгружен" || normalized === "done") {
+                return "status-shipped";
+            }
+            if (normalized === "canceled" || normalized === "cancelled") {
+                return "status-cancelled";
+            }
+            return "";
+        }
+
         function renderHistory() {
             el.profileHistory.innerHTML = "";
             el.profileLoadMore.style.display = "none";
@@ -1762,7 +2030,10 @@
                 const title = document.createElement("div");
                 title.textContent = `Заказ ${shortOrderId(order.id)}`;
                 const status = document.createElement("span");
-                status.className = "order-status";
+                const statusClass = getOrderStatusClass(order.status);
+                status.className = statusClass
+                    ? `order-status ${statusClass}`
+                    : "order-status";
                 status.textContent = mapOrderStatus(order.status);
                 header.appendChild(title);
                 header.appendChild(status);
@@ -1971,14 +2242,6 @@
             if (drawer) {
                 drawer.classList.remove("open");
             }
-        }
-
-        function showLoading(isVisible, text) {
-            if (text) {
-                const label = el.loadingOverlay.querySelector(".loading-card");
-                label.textContent = text;
-            }
-            el.loadingOverlay.style.display = isVisible ? "flex" : "none";
         }
 
         function showToast(message) {
