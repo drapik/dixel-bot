@@ -41,7 +41,7 @@
             background: rgba(10, 14, 23, 0.95);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(0, 255, 242, 0.2);
-            padding: 16px 20px 18px;
+            padding: 12px 14px 14px;
             z-index: 100;
             animation: slideDown 0.5s ease-out;
         }
@@ -68,29 +68,58 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 14px;
-            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
         }
 
-        .btn-profile {
-            padding: 10px 14px;
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-action-btn {
+            width: 40px;
+            height: 40px;
             border-radius: 10px;
             border: 1px solid rgba(0, 255, 242, 0.3);
             background: rgba(0, 255, 242, 0.1);
             color: var(--neon-cyan);
-            font-family: 'Exo 2', sans-serif;
-            font-weight: 600;
-            font-size: 12px;
+            font-size: 18px;
             cursor: pointer;
             transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
         }
 
-        .btn-profile:hover {
+        .header-action-btn:hover {
             background: rgba(0, 255, 242, 0.2);
             box-shadow: 0 0 20px rgba(0, 255, 242, 0.1);
+        }
+
+        .header-cart-btn {
+            background: linear-gradient(135deg, rgba(0, 255, 242, 0.2), rgba(191, 0, 255, 0.2));
+        }
+
+        .header-cart-count {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            min-width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            padding: 0 4px;
+            background: #ff6b6b;
+            color: #fff;
+            font-size: 10px;
+            line-height: 18px;
+            font-weight: 700;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(10, 14, 23, 0.8);
         }
 
         @keyframes glow {
@@ -98,17 +127,24 @@
             50% { filter: drop-shadow(0 0 15px var(--neon-cyan)); }
         }
 
+        .search-row {
+            display: flex;
+            align-items: stretch;
+            gap: 10px;
+        }
+
         .search-bar {
             position: relative;
-            margin-bottom: 14px;
+            flex: 1;
         }
 
         .search-bar input {
             width: 100%;
-            padding: 14px 50px 14px 20px;
+            height: 44px;
+            padding: 12px 44px 12px 14px;
             background: var(--bg-card);
             border: 1px solid rgba(0, 255, 242, 0.3);
-            border-radius: 12px;
+            border-radius: 10px;
             color: var(--text-primary);
             font-size: 15px;
             font-family: 'Exo 2', sans-serif;
@@ -127,24 +163,33 @@
 
         .search-icon {
             position: absolute;
-            right: 18px;
+            right: 14px;
             top: 50%;
             transform: translateY(-50%);
             color: var(--neon-cyan);
-            font-size: 20px;
+            font-size: 18px;
         }
 
-        .filter-row {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            margin-bottom: 12px;
+        .btn-categories {
+            height: 44px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 242, 0.3);
+            background: rgba(0, 255, 242, 0.1);
+            color: var(--neon-cyan);
+            font-family: 'Exo 2', sans-serif;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 0 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s ease;
         }
 
-        .top-actions {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 12px;
+        .btn-categories:hover {
+            background: rgba(0, 255, 242, 0.2);
+            box-shadow: 0 0 20px rgba(0, 255, 242, 0.1);
         }
 
         .btn {
@@ -503,6 +548,22 @@
             transform: translateY(0);
         }
 
+        .drawer.drawer-left {
+            align-items: stretch;
+            justify-content: flex-start;
+        }
+
+        .drawer.drawer-left .drawer-panel {
+            width: min(84vw, 340px);
+            max-height: 100vh;
+            border-radius: 0 18px 18px 0;
+            transform: translateX(-100%);
+        }
+
+        .drawer.drawer-left.open .drawer-panel {
+            transform: translateX(0);
+        }
+
         .drawer-header {
             padding: 16px 20px;
             display: flex;
@@ -851,21 +912,22 @@
             .products-grid {
                 grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
             }
-
-            .top-actions {
-                flex-direction: column;
-            }
         }
 
         @media (max-width: 560px) {
-            .brand-row {
-                flex-direction: column;
-                align-items: flex-start;
+            .logo {
+                font-size: 20px;
+                letter-spacing: 2px;
             }
 
-            .btn-profile {
-                width: 100%;
-                text-align: center;
+            .header-action-btn {
+                width: 36px;
+                height: 36px;
+            }
+
+            .btn-categories {
+                padding: 0 10px;
+                font-size: 11px;
             }
         }
     </style>
@@ -874,20 +936,21 @@
     <header class="header">
         <div class="brand-row">
             <div class="logo">DIXEL</div>
-            <button class="btn-profile" id="profileButton" type="button">Профиль</button>
+            <div class="header-actions">
+                <button class="header-action-btn" id="profileButton" type="button" aria-label="Профиль">👤</button>
+                <button class="header-action-btn header-cart-btn" id="cartButton" type="button" aria-label="Корзина">
+                    <span aria-hidden="true">🛒</span>
+                    <span class="header-cart-count" id="cartBadge">0</span>
+                </button>
+            </div>
         </div>
 
-        <div class="search-bar">
-            <input id="searchInput" type="text" placeholder="Поиск по артикулу, названию...">
-            <span class="search-icon">⚡</span>
-        </div>
-
-        <div class="filter-row">
-            <button class="btn btn-secondary" id="openCategories" type="button">Категории</button>
-        </div>
-
-        <div class="top-actions">
-            <button class="btn btn-cart" id="cartButton" type="button">🛒 Корзина: 0 ₽</button>
+        <div class="search-row">
+            <button class="btn-categories" id="openCategories" type="button">☰ Категории</button>
+            <div class="search-bar">
+                <input id="searchInput" type="text" placeholder="Поиск по артикулу, названию...">
+                <span class="search-icon">⚡</span>
+            </div>
         </div>
     </header>
 
@@ -905,7 +968,7 @@
         <div class="catalog-sentinel" id="catalogSentinel" aria-hidden="true"></div>
     </main>
 
-    <div class="drawer" id="categoryDrawer">
+    <div class="drawer drawer-left" id="categoryDrawer">
         <div class="drawer-panel">
             <div class="drawer-header">
                 <h3>Категории</h3>
@@ -1032,6 +1095,7 @@
             searchInput: document.getElementById("searchInput"),
             openCategories: document.getElementById("openCategories"),
             cartButton: document.getElementById("cartButton"),
+            cartBadge: document.getElementById("cartBadge"),
             profileButton: document.getElementById("profileButton"),
             profileTelegram: document.getElementById("profileTelegram"),
             breadcrumb: document.getElementById("breadcrumb"),
@@ -1881,9 +1945,21 @@
             }, 0);
         }
 
+        function getCartItemsCount() {
+            return state.cart.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+        }
+
         function updateCartBadge() {
-            const total = calculateCartTotal();
-            el.cartButton.textContent = `🛒 Корзина: ${formatPrice(total)}`;
+            const itemsCount = getCartItemsCount();
+            if (el.cartBadge) {
+                el.cartBadge.textContent = String(itemsCount);
+                el.cartBadge.style.display = itemsCount > 0 ? "flex" : "none";
+            }
+            if (el.cartButton) {
+                const cartLabel = itemsCount > 0 ? `Корзина, товаров: ${itemsCount}` : "Корзина";
+                el.cartButton.setAttribute("aria-label", cartLabel);
+                el.cartButton.setAttribute("title", cartLabel);
+            }
         }
 
         async function placeOrder() {
