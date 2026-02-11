@@ -843,7 +843,7 @@
 
         .catalog-loading {
             display: none;
-            margin-top: 14px;
+            margin: 14px 20px 0;
             padding: 12px;
             border-radius: 12px;
             border: 1px solid rgba(0, 255, 242, 0.16);
@@ -1038,6 +1038,18 @@
         const PROFILE_PAGE_SIZE = 5;
         const CATALOG_PAGE_SIZE = 24;
         const PRICING_REQUEST_CHUNK = 200;
+        const NON_TEXT_INPUT_TYPES = new Set([
+            "button",
+            "checkbox",
+            "color",
+            "file",
+            "hidden",
+            "image",
+            "radio",
+            "range",
+            "reset",
+            "submit"
+        ]);
 
         const STORAGE_KEYS = {
             cart: "dixel_cart",
@@ -1170,6 +1182,7 @@
                     applyFilters();
                 }, 150);
             });
+            bindKeyboardDismiss();
 
             el.openCategories.addEventListener("click", () => openDrawer("categoryDrawer"));
             el.cartButton.addEventListener("click", () => {
@@ -1197,6 +1210,60 @@
             document.querySelectorAll("[data-close]").forEach((btn) => {
                 btn.addEventListener("click", () => closeDrawer(btn.dataset.close));
             });
+        }
+
+        function bindKeyboardDismiss() {
+            const handler = (event) => dismissKeyboardOnOutsideTap(event);
+            document.addEventListener("touchstart", handler, { passive: true });
+            document.addEventListener("pointerdown", handler);
+        }
+
+        function dismissKeyboardOnOutsideTap(event) {
+            const activeElement = document.activeElement;
+            if (!isTextEntryElement(activeElement)) {
+                return;
+            }
+
+            const target = event.target;
+            if (!(target instanceof Element)) {
+                dismissActiveTextEntry();
+                return;
+            }
+
+            if (target === activeElement || activeElement.contains(target)) {
+                return;
+            }
+
+            if (target.closest("input, textarea, [contenteditable='true']")) {
+                return;
+            }
+
+            if (target.closest(".search-bar")) {
+                return;
+            }
+
+            dismissActiveTextEntry();
+        }
+
+        function dismissActiveTextEntry() {
+            const activeElement = document.activeElement;
+            if (!isTextEntryElement(activeElement)) {
+                return;
+            }
+            activeElement.blur();
+        }
+
+        function isTextEntryElement(node) {
+            if (!(node instanceof HTMLElement)) {
+                return false;
+            }
+            if (node instanceof HTMLTextAreaElement) {
+                return true;
+            }
+            if (node instanceof HTMLInputElement) {
+                return !NON_TEXT_INPUT_TYPES.has(node.type);
+            }
+            return node.isContentEditable;
         }
 
         function loadStoredState() {
@@ -2307,6 +2374,7 @@
         }
 
         function openDrawer(id) {
+            dismissActiveTextEntry();
             const drawer = document.getElementById(id);
             if (drawer) {
                 drawer.classList.add("open");
@@ -2314,6 +2382,7 @@
         }
 
         function closeDrawer(id) {
+            dismissActiveTextEntry();
             const drawer = document.getElementById(id);
             if (drawer) {
                 drawer.classList.remove("open");

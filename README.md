@@ -23,6 +23,9 @@ MVP для B2B-клиентов с поиском, вложенными кате
 1. Откройте папку проекта.
 2. Создайте `.env` на основе `.env.example` и заполните ключи Supabase и Telegram.
    При нестабильной сети можно настроить `UPSERT_BATCH_SIZE`, `UPSERT_PRODUCT_BATCH_SIZE`, `UPSERT_RETRIES`, `UPSERT_RETRY_MS`.
+   Для ускорения первой страницы каталога можно настроить кэш:
+   `CATALOG_RESPONSE_CACHE_TTL_MS` (по умолчанию `30000`) и
+   `CATALOG_RESPONSE_CACHE_MAX_ENTRIES` (по умолчанию `300`).
 3. Установите зависимости:
    ```powershell
    npm install

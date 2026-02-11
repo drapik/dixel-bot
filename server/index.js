@@ -34,6 +34,7 @@ const {
 } = require("./lib/moysklad-order-status-sync");
 const { ensureMoyskladProductLinks } = require("./lib/moysklad-product-sync");
 const { withRetries } = require("./lib/retry");
+const { createCatalogCache, buildCatalogCacheKey } = require("./lib/catalog-cache");
 
 const DISCOUNTS = {
     base: 0,
@@ -45,6 +46,14 @@ const CATALOG_DEFAULT_LIMIT = 24;
 const CATALOG_MAX_LIMIT = 50;
 const PRICING_CHUNK_SIZE = 200;
 const CATEGORY_CACHE_TTL_MS = 60 * 1000;
+const CATALOG_RESPONSE_CACHE_TTL_MS = Number.parseInt(
+    String(process.env.CATALOG_RESPONSE_CACHE_TTL_MS || "30000"),
+    10
+);
+const CATALOG_RESPONSE_CACHE_MAX_ENTRIES = Number.parseInt(
+    String(process.env.CATALOG_RESPONSE_CACHE_MAX_ENTRIES || "300"),
+    10
+);
 
 const categoryCache = {
     loadedAt: 0,
@@ -52,6 +61,14 @@ const categoryCache = {
     hiddenCategoryIds: new Set(),
     visibleCategories: []
 };
+const catalogResponseCache = createCatalogCache({
+    ttlMs: Number.isFinite(CATALOG_RESPONSE_CACHE_TTL_MS) && CATALOG_RESPONSE_CACHE_TTL_MS > 0
+        ? CATALOG_RESPONSE_CACHE_TTL_MS
+        : 30000,
+    maxEntries: Number.isFinite(CATALOG_RESPONSE_CACHE_MAX_ENTRIES) && CATALOG_RESPONSE_CACHE_MAX_ENTRIES > 0
+        ? CATALOG_RESPONSE_CACHE_MAX_ENTRIES
+        : 300
+});
 
 const MOYSKLAD_ORGANIZATION_ID = "9d1894be-4185-11ed-0a80-0b95001b946e";
 const MOYSKLAD_STORE_NAME = "Основной склад";
@@ -303,6 +320,8 @@ async function getCategorySnapshot(supabase, { forceRefresh = false } = {}) {
     categoryCache.categories = categories;
     categoryCache.hiddenCategoryIds = hiddenCategoryIds;
     categoryCache.visibleCategories = visibleCategories;
+    // Категории влияют на фильтрацию каталога, поэтому сбрасываем кэш выдачи.
+    catalogResponseCache.clear();
 
     return {
         hiddenCategoryIds,
@@ -310,96 +329,145 @@ async function getCategorySnapshot(supabase, { forceRefresh = false } = {}) {
     };
 }
 
+async function fetchCatalogPayload({
+    limit,
+    offset,
+    withCategories,
+    searchQuery,
+    requestedCategoryIds
+}) {
+    const { hiddenCategoryIds, visibleCategories } = await getCategorySnapshot(supabase);
+    const visibleRequestedCategoryIds = requestedCategoryIds.filter(
+        (categoryId) => !hiddenCategoryIds.has(categoryId)
+    );
+
+    if (requestedCategoryIds.length > 0 && !visibleRequestedCategoryIds.length) {
+        const emptyPayload = {
+            products: [],
+            pagination: {
+                limit,
+                offset,
+                hasMore: false,
+                nextOffset: offset
+            }
+        };
+        if (withCategories) {
+            emptyPayload.categories = visibleCategories.map(mapCategoryForCatalog);
+        }
+        return emptyPayload;
+    }
+
+    let query = supabase
+        .from("products")
+        .select("external_id, category_external_id, sku, name, stock, picture_url")
+        .gt("stock", 0)
+        .order("external_id", { ascending: true })
+        .range(offset, offset + limit);
+
+    const searchOrFilter = buildSearchOrFilter(searchQuery);
+    if (searchOrFilter) {
+        query = query.or(searchOrFilter);
+    }
+
+    if (visibleRequestedCategoryIds.length) {
+        query = query.in("category_external_id", visibleRequestedCategoryIds);
+    } else if (hiddenCategoryIds.size) {
+        query = query.not(
+            "category_external_id",
+            "in",
+            buildPostgrestInList(Array.from(hiddenCategoryIds))
+        );
+    }
+
+    const { data: rawProducts, error } = await query;
+    if (error) {
+        throw error;
+    }
+
+    const products = (rawProducts || [])
+        .filter((product) => {
+            const categoryId = product?.category_external_id
+                ? String(product.category_external_id)
+                : "";
+            if (!categoryId) {
+                return true;
+            }
+            return !hiddenCategoryIds.has(categoryId);
+        })
+        .map(mapProductForCatalog)
+        .filter(Boolean);
+
+    const hasMore = products.length > limit;
+    const pageItems = hasMore ? products.slice(0, limit) : products;
+
+    const payload = {
+        products: pageItems,
+        pagination: {
+            limit,
+            offset,
+            hasMore,
+            nextOffset: offset + pageItems.length
+        }
+    };
+
+    if (withCategories) {
+        payload.categories = visibleCategories.map(mapCategoryForCatalog);
+    }
+
+    return payload;
+}
+
+async function warmupCatalogCache() {
+    if (!supabase) {
+        return;
+    }
+
+    const request = {
+        limit: CATALOG_DEFAULT_LIMIT,
+        offset: 0,
+        withCategories: true,
+        searchQuery: "",
+        requestedCategoryIds: []
+    };
+    const key = buildCatalogCacheKey(request);
+
+    if (catalogResponseCache.get(key)) {
+        return;
+    }
+
+    try {
+        const payload = await fetchCatalogPayload(request);
+        catalogResponseCache.set(key, payload);
+        console.log("✅ [CATALOG] Warmup cache готов");
+    } catch (error) {
+        console.warn("⚠️ [CATALOG] Warmup cache failed:", String(error?.message || error));
+    }
+}
+
 app.get("/api/catalog", async (req, res) => {
     if (!supabase) {
         return res.status(500).json({ error: "Supabase not configured" });
     }
 
-    const limit = parseCatalogLimit(req.query?.limit);
-    const offset = parseCatalogOffset(req.query?.offset);
-    const withCategories = String(req.query?.withCategories || "0") === "1";
-    const searchQuery = parseSearchQuery(req.query?.q);
-    const requestedCategoryIds = parseCategoryIds(req.query?.categoryIds);
+    const request = {
+        limit: parseCatalogLimit(req.query?.limit),
+        offset: parseCatalogOffset(req.query?.offset),
+        withCategories: String(req.query?.withCategories || "0") === "1",
+        searchQuery: parseSearchQuery(req.query?.q),
+        requestedCategoryIds: parseCategoryIds(req.query?.categoryIds)
+    };
+    const cacheKey = buildCatalogCacheKey(request);
+    const cachedPayload = catalogResponseCache.get(cacheKey);
+
+    if (cachedPayload) {
+        res.set("x-catalog-cache", "HIT");
+        return res.json(cachedPayload);
+    }
 
     try {
-        const { hiddenCategoryIds, visibleCategories } = await getCategorySnapshot(supabase);
-        const visibleRequestedCategoryIds = requestedCategoryIds.filter(
-            (categoryId) => !hiddenCategoryIds.has(categoryId)
-        );
-
-        if (requestedCategoryIds.length > 0 && !visibleRequestedCategoryIds.length) {
-            const emptyPayload = {
-                products: [],
-                pagination: {
-                    limit,
-                    offset,
-                    hasMore: false,
-                    nextOffset: offset
-                }
-            };
-            if (withCategories) {
-                emptyPayload.categories = visibleCategories.map(mapCategoryForCatalog);
-            }
-            return res.json(emptyPayload);
-        }
-
-        let query = supabase
-            .from("products")
-            .select("external_id, category_external_id, sku, name, stock, picture_url")
-            .gt("stock", 0)
-            .order("external_id", { ascending: true })
-            .range(offset, offset + limit);
-
-        const searchOrFilter = buildSearchOrFilter(searchQuery);
-        if (searchOrFilter) {
-            query = query.or(searchOrFilter);
-        }
-
-        if (visibleRequestedCategoryIds.length) {
-            query = query.in("category_external_id", visibleRequestedCategoryIds);
-        } else if (hiddenCategoryIds.size) {
-            query = query.not(
-                "category_external_id",
-                "in",
-                buildPostgrestInList(Array.from(hiddenCategoryIds))
-            );
-        }
-
-        const { data: rawProducts, error } = await query;
-        if (error) {
-            throw error;
-        }
-
-        const products = (rawProducts || [])
-            .filter((product) => {
-                const categoryId = product?.category_external_id
-                    ? String(product.category_external_id)
-                    : "";
-                if (!categoryId) {
-                    return true;
-                }
-                return !hiddenCategoryIds.has(categoryId);
-            })
-            .map(mapProductForCatalog)
-            .filter(Boolean);
-
-        const hasMore = products.length > limit;
-        const pageItems = hasMore ? products.slice(0, limit) : products;
-
-        const payload = {
-            products: pageItems,
-            pagination: {
-                limit,
-                offset,
-                hasMore,
-                nextOffset: offset + pageItems.length
-            }
-        };
-
-        if (withCategories) {
-            payload.categories = visibleCategories.map(mapCategoryForCatalog);
-        }
-
+        const payload = await fetchCatalogPayload(request);
+        catalogResponseCache.set(cacheKey, payload);
+        res.set("x-catalog-cache", "MISS");
         return res.json(payload);
     } catch (error) {
         console.error(error);
@@ -897,4 +965,5 @@ app.use(express.static(staticRoot));
 
 app.listen(PORT, () => {
     console.log(`DIXEL server running on http://localhost:${PORT}`);
+    warmupCatalogCache();
 });
