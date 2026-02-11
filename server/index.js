@@ -14,7 +14,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_ADMIN_ID = parseChatId(process.env.TELEGRAM_ADMIN_ID) ?? DEFAULT_ADMIN_ID;
 const ORDER_TIMEZONE = String(process.env.ORDER_TIMEZONE || process.env.TZ || "Europe/Moscow").trim();
 
-const { formatOrderMessage } = require("./bot/lib/formatters");
+const { formatOrderMessage, formatMoyskladExportFailureMessage } = require("./bot/lib/formatters");
 const {
     insertOrderWithItems,
     updateOrderMoyskladStatus,
@@ -41,6 +41,13 @@ const DISCOUNTS = {
     minus5: 0.05,
     minus8: 0.08,
     minus10: 0.1
+};
+const OPEN_REGISTRATION_STATUSES = ["pending", "claimed"];
+const SESSION_STATUS = {
+    active: "active",
+    pending: "pending",
+    notRegistered: "not_registered",
+    blocked: "blocked"
 };
 const CATALOG_DEFAULT_LIMIT = 24;
 const CATALOG_MAX_LIMIT = 50;
@@ -445,33 +452,67 @@ async function warmupCatalogCache() {
 }
 
 app.get("/api/catalog", async (req, res) => {
-    if (!supabase) {
-        return res.status(500).json({ error: "Supabase not configured" });
-    }
-
-    const request = {
-        limit: parseCatalogLimit(req.query?.limit),
-        offset: parseCatalogOffset(req.query?.offset),
-        withCategories: String(req.query?.withCategories || "0") === "1",
-        searchQuery: parseSearchQuery(req.query?.q),
-        requestedCategoryIds: parseCategoryIds(req.query?.categoryIds)
-    };
-    const cacheKey = buildCatalogCacheKey(request);
-    const cachedPayload = catalogResponseCache.get(cacheKey);
-
-    if (cachedPayload) {
-        res.set("x-catalog-cache", "HIT");
-        return res.json(cachedPayload);
-    }
+    const initData = extractInitData(req);
 
     try {
+        const session = await resolveSessionStateByInitData(initData);
+        if (!session.ok) {
+            return res.status(session.httpStatus).json({ error: session.error });
+        }
+
+        if (session.sessionStatus !== SESSION_STATUS.active) {
+            return res.status(403).json({ error: mapSessionStatusToAccessError(session.sessionStatus) });
+        }
+
+        const request = {
+            limit: parseCatalogLimit(req.query?.limit),
+            offset: parseCatalogOffset(req.query?.offset),
+            withCategories: String(req.query?.withCategories || "0") === "1",
+            searchQuery: parseSearchQuery(req.query?.q),
+            requestedCategoryIds: parseCategoryIds(req.query?.categoryIds)
+        };
+        const cacheKey = buildCatalogCacheKey(request);
+        const cachedPayload = catalogResponseCache.get(cacheKey);
+
+        if (cachedPayload) {
+            res.set("x-catalog-cache", "HIT");
+            return res.json(cachedPayload);
+        }
+
         const payload = await fetchCatalogPayload(request);
         catalogResponseCache.set(cacheKey, payload);
         res.set("x-catalog-cache", "MISS");
         return res.json(payload);
     } catch (error) {
         console.error(error);
-        return res.status(500).json({ error: "Catalog fetch failed" });
+        return res.status(500).json({ error: "catalog_fetch_failed" });
+    }
+});
+
+app.get("/api/session/status", async (req, res) => {
+    const initData = extractInitData(req);
+
+    try {
+        const session = await resolveSessionStateByInitData(initData);
+        if (!session.ok) {
+            return res.status(session.httpStatus).json({
+                ok: false,
+                status: "unauthorized",
+                error: session.error
+            });
+        }
+
+        return res.json({
+            ok: true,
+            status: session.sessionStatus
+        });
+    } catch (error) {
+        console.error("❌ [SERVER] /api/session/status failed:", error);
+        return res.status(500).json({
+            ok: false,
+            status: "unauthorized",
+            error: "session_status_failed"
+        });
     }
 });
 
@@ -557,6 +598,149 @@ function parseTelegramUser(initData) {
     }
 }
 
+function extractInitData(req) {
+    const bodyValue = req.body?.initData;
+    if (typeof bodyValue === "string" && bodyValue.trim()) {
+        return bodyValue.trim();
+    }
+
+    const headerValue = req.headers["x-telegram-init-data"];
+    return typeof headerValue === "string" ? headerValue.trim() : "";
+}
+
+function normalizeAccessStatus(value) {
+    return String(value || "active").trim().toLowerCase();
+}
+
+function isAllowedPriceTier(value) {
+    const tier = String(value || "").trim();
+    return DISCOUNTS[tier] !== undefined;
+}
+
+function isMissingRelationError(error, relationName) {
+    const message = String(error?.message || "").toLowerCase();
+    if (!message) {
+        return false;
+    }
+    return message.includes("relation") && message.includes(String(relationName || "").toLowerCase());
+}
+
+function mapSessionStatusToAccessError(status) {
+    if (status === SESSION_STATUS.pending) {
+        return "registration_pending";
+    }
+    if (status === SESSION_STATUS.blocked) {
+        return "customer_blocked";
+    }
+    if (status === SESSION_STATUS.notRegistered) {
+        return "registration_required";
+    }
+    return "registration_required";
+}
+
+function mapSessionStatusToOrderError(status) {
+    if (status === SESSION_STATUS.blocked) {
+        return "customer_blocked";
+    }
+    if (status === SESSION_STATUS.pending) {
+        return "registration_pending";
+    }
+    return "customer_not_found";
+}
+
+async function resolveSessionStateByInitData(initData) {
+    if (!verifyTelegramInitData(initData)) {
+        return {
+            ok: false,
+            httpStatus: 401,
+            error: "unauthorized",
+            sessionStatus: "unauthorized"
+        };
+    }
+
+    if (!supabase) {
+        return {
+            ok: false,
+            httpStatus: 500,
+            error: "supabase_not_configured",
+            sessionStatus: SESSION_STATUS.notRegistered
+        };
+    }
+
+    const tgUser = parseTelegramUser(initData);
+    const telegramId = tgUser?.id ? Number(tgUser.id) : null;
+    if (!telegramId) {
+        return {
+            ok: false,
+            httpStatus: 400,
+            error: "telegram_id_missing",
+            sessionStatus: "unauthorized"
+        };
+    }
+
+    const { data: customer, error: customerError } = await supabase
+        .from("customers")
+        .select("id, telegram_id, price_tier, access_status, moysklad_counterparty_id")
+        .eq("telegram_id", telegramId)
+        .maybeSingle();
+
+    if (customerError) {
+        throw customerError;
+    }
+
+    if (customer?.id) {
+        const accessStatus = normalizeAccessStatus(customer.access_status);
+        if (accessStatus === SESSION_STATUS.blocked) {
+            return {
+                ok: true,
+                sessionStatus: SESSION_STATUS.blocked,
+                telegramId,
+                tgUser,
+                customer
+            };
+        }
+
+        if (isAllowedPriceTier(customer.price_tier)) {
+            return {
+                ok: true,
+                sessionStatus: SESSION_STATUS.active,
+                telegramId,
+                tgUser,
+                customer
+            };
+        }
+    }
+
+    let hasOpenRequest = false;
+    try {
+        const { data: requestRows, error: requestError } = await supabase
+            .from("registration_requests")
+            .select("id")
+            .eq("telegram_id", telegramId)
+            .in("status", OPEN_REGISTRATION_STATUSES)
+            .limit(1);
+
+        if (requestError) {
+            throw requestError;
+        }
+
+        hasOpenRequest = Array.isArray(requestRows) && requestRows.length > 0;
+    } catch (error) {
+        if (!isMissingRelationError(error, "registration_requests")) {
+            throw error;
+        }
+        hasOpenRequest = false;
+    }
+
+    return {
+        ok: true,
+        sessionStatus: hasOpenRequest ? SESSION_STATUS.pending : SESSION_STATUS.notRegistered,
+        telegramId,
+        tgUser,
+        customer: null
+    };
+}
+
 async function exportOrderToMoysklad({ supabase, order, customer }) {
     const token = getMoyskladToken();
     if (!token) {
@@ -596,11 +780,7 @@ async function exportOrderToMoysklad({ supabase, order, customer }) {
 }
 
 app.post("/api/order", async (req, res) => {
-    const initData = req.body?.initData || req.headers["x-telegram-init-data"] || "";
-
-    if (!verifyTelegramInitData(initData)) {
-        return res.status(401).json({ ok: false, error: "unauthorized" });
-    }
+    const initData = extractInitData(req);
 
     const order = req.body?.order;
     if (!order || typeof order !== "object") {
@@ -609,11 +789,6 @@ app.post("/api/order", async (req, res) => {
 
     if (order.type !== "order") {
         return res.status(400).json({ ok: false, error: "unsupported payload" });
-    }
-
-    if (!supabase) {
-        console.warn("⚠️ [SERVER] Supabase НЕ настроен!");
-        return res.status(500).json({ ok: false, error: "supabase_not_configured" });
     }
 
     const items = Array.isArray(order.items) ? order.items : [];
@@ -627,26 +802,20 @@ app.post("/api/order", async (req, res) => {
     }
 
     try {
-        const tgUser = parseTelegramUser(initData);
-        const telegramId = tgUser?.id ? Number(tgUser.id) : null;
-        if (!telegramId) {
-            return res.status(400).json({ ok: false, error: "telegram_id_missing" });
+        const session = await resolveSessionStateByInitData(initData);
+        if (!session.ok) {
+            return res.status(session.httpStatus).json({ ok: false, error: session.error });
         }
 
-        const { data: customer, error: customerError } = await supabase
-            .from("customers")
-            .select("id, price_tier, moysklad_counterparty_id")
-            .eq("telegram_id", telegramId)
-            .maybeSingle();
-
-        if (customerError) {
-            throw customerError;
+        if (session.sessionStatus !== SESSION_STATUS.active) {
+            return res.status(403).json({
+                ok: false,
+                error: mapSessionStatusToOrderError(session.sessionStatus)
+            });
         }
 
-        if (!customer?.id) {
-            return res.status(403).json({ ok: false, error: "customer_not_found" });
-        }
-
+        const customer = session.customer;
+        const tgUser = session.tgUser || null;
         const orderRecord = await insertOrderWithItems(
             supabase,
             { ...order, total, items },
@@ -710,6 +879,30 @@ app.post("/api/order", async (req, res) => {
             console.error("❌ [SERVER] Ошибка уведомления Telegram:", error);
         }
 
+        let moyskladAlertError = null;
+        if (moyskladError) {
+            const failureMessage = formatMoyskladExportFailureMessage(
+                {
+                    order: payload,
+                    localOrderId: orderRecord.id,
+                    customer,
+                    user: payload.user,
+                    error: moyskladError
+                },
+                { timeZone: ORDER_TIMEZONE }
+            );
+
+            try {
+                await sendTelegramMessage(TELEGRAM_ADMIN_ID, failureMessage);
+                console.warn(
+                    `⚠️ [MOYSKLAD] Failure alert sent: ${payload.orderId || "unknown"} -> admin ${TELEGRAM_ADMIN_ID}`
+                );
+            } catch (error) {
+                moyskladAlertError = error;
+                console.error("❌ [MOYSKLAD] Ошибка отправки alert-уведомления:", error);
+            }
+        }
+
         return res.json({
             ok: true,
             order: {
@@ -720,7 +913,8 @@ app.post("/api/order", async (req, res) => {
             },
             moysklad: {
                 exported: !moyskladError,
-                orderId: moyskladResult?.id || null
+                orderId: moyskladResult?.id || null,
+                alertSent: moyskladError ? !moyskladAlertError : null
             }
         });
     } catch (error) {
@@ -793,52 +987,26 @@ app.post("/api/moysklad/webhook/customerorder", async (req, res) => {
 });
 
 app.get("/api/orders", async (req, res) => {
-    const initDataHeader = req.headers["x-telegram-init-data"];
-    const initData = typeof initDataHeader === "string" ? initDataHeader : "";
+    const initData = extractInitData(req);
     const rawLimit = Number.parseInt(String(req.query?.limit || ""), 10);
     const rawOffset = Number.parseInt(String(req.query?.offset || ""), 10);
     const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(50, rawLimit)) : 5;
     const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
 
-    if (!verifyTelegramInitData(initData)) {
-        return res.status(401).json({ ok: false, error: "unauthorized" });
-    }
-
-    if (!supabase) {
-        return res.status(500).json({ ok: false, error: "supabase_not_configured" });
-    }
-
     try {
-        const tgUser = parseTelegramUser(initData);
-        const telegramId = tgUser?.id ? Number(tgUser.id) : null;
-        if (!telegramId) {
-            return res.status(400).json({ ok: false, error: "telegram_id_missing" });
+        const session = await resolveSessionStateByInitData(initData);
+        if (!session.ok) {
+            return res.status(session.httpStatus).json({ ok: false, error: session.error });
         }
 
-        const { data: customer, error: customerError } = await supabase
-            .from("customers")
-            .select("id")
-            .eq("telegram_id", telegramId)
-            .maybeSingle();
-
-        if (customerError) {
-            throw customerError;
-        }
-
-        if (!customer?.id) {
-            return res.json({
-                ok: true,
-                orders: [],
-                pagination: {
-                    limit,
-                    offset,
-                    hasMore: false,
-                    nextOffset: offset
-                }
+        if (session.sessionStatus !== SESSION_STATUS.active) {
+            return res.status(403).json({
+                ok: false,
+                error: mapSessionStatusToAccessError(session.sessionStatus)
             });
         }
 
-        const { orders, hasMore } = await fetchCustomerOrders(supabase, customer.id, {
+        const { orders, hasMore } = await fetchCustomerOrders(supabase, session.customer.id, {
             limit,
             offset
         });
@@ -860,7 +1028,7 @@ app.get("/api/orders", async (req, res) => {
 });
 
 app.post("/api/pricing", async (req, res) => {
-    const initData = req.body?.initData || req.headers["x-telegram-init-data"] || "";
+    const initData = extractInitData(req);
     const productIds = Array.from(
         new Set(
             (Array.isArray(req.body?.productIds) ? req.body.productIds : [])
@@ -869,46 +1037,33 @@ app.post("/api/pricing", async (req, res) => {
         )
     ).slice(0, 5000);
 
-    if (!verifyTelegramInitData(initData)) {
-        return res.json({ authorized: false, prices: {} });
-    }
-
-    if (!supabase) {
-        console.warn("⚠️ [SERVER] Supabase НЕ настроен!");
-        return res.json({ authorized: false, prices: {} });
-    }
-
-    const tgUser = parseTelegramUser(initData);
-    const telegramId = tgUser && tgUser.id ? tgUser.id : null;
-    console.log("🔍 [SERVER] Telegram ID из initData:", telegramId);
-
-    if (!telegramId) {
-        console.warn("⚠️ [SERVER] Не удалось извлечь telegram_id!");
-        return res.json({ authorized: false, prices: {} });
-    }
-
     try {
-        console.log("🔍 [SERVER] Поиск клиента в БД с telegram_id:", telegramId);
-        const { data: customer, error: customerError } = await supabase
-            .from("customers")
-            .select("id, price_tier")
-            .eq("telegram_id", telegramId)
-            .maybeSingle();
-
-        if (customerError) {
-            console.error("❌ [SERVER] Ошибка БД:", customerError);
-            throw customerError;
+        const session = await resolveSessionStateByInitData(initData);
+        if (!session.ok) {
+            let reason = "registration_required";
+            if (session.error === "unauthorized") {
+                reason = "unauthorized";
+            } else if (session.error === "supabase_not_configured") {
+                reason = "supabase_not_configured";
+            }
+            return res.json({
+                authorized: false,
+                prices: {},
+                reason
+            });
         }
 
-        console.log("🔍 [SERVER] Найден клиент:", customer);
-
-        if (!customer || !customer.price_tier || DISCOUNTS[customer.price_tier] === undefined) {
-            console.warn("⚠️ [SERVER] Клиент НЕ найден или некорректный price_tier!");
-            console.warn("⚠️ [SERVER] customer:", customer);
-            return res.json({ authorized: false, prices: {} });
+        if (session.sessionStatus !== SESSION_STATUS.active) {
+            return res.json({
+                authorized: false,
+                prices: {},
+                reason: mapSessionStatusToAccessError(session.sessionStatus)
+            });
         }
 
-        console.log("✅ [SERVER] Клиент найден, price_tier:", customer.price_tier);
+        const customer = session.customer;
+        const tgUser = session.tgUser;
+        const telegramId = session.telegramId;
 
         if (tgUser) {
             const { error: updateError } = await supabase
@@ -957,7 +1112,7 @@ app.post("/api/pricing", async (req, res) => {
         return res.json({ authorized: true, prices });
     } catch (error) {
         console.error("❌ [SERVER] Ошибка в /api/pricing:", error);
-        return res.status(500).json({ authorized: false, prices: {} });
+        return res.status(500).json({ authorized: false, prices: {}, reason: "internal_error" });
     }
 });
 

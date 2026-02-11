@@ -908,6 +908,56 @@
             transform: translate(-50%, 0);
         }
 
+        .access-gate {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 14, 23, 0.92);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 450;
+        }
+
+        .access-gate.show {
+            display: flex;
+        }
+
+        .access-gate-card {
+            width: 100%;
+            max-width: 420px;
+            background: #151922;
+            border: 1px solid rgba(0, 255, 242, 0.3);
+            border-radius: 14px;
+            padding: 20px 18px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+        }
+
+        .access-gate-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: var(--neon-cyan);
+        }
+
+        .access-gate-text {
+            color: var(--text-primary);
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        body.app-locked .search-row,
+        body.app-locked .status-row,
+        body.app-locked .breadcrumb,
+        body.app-locked main,
+        body.app-locked .header-actions {
+            pointer-events: none;
+            user-select: none;
+            opacity: 0.45;
+            filter: blur(1px);
+        }
+
         @media (max-width: 720px) {
             .products-grid {
                 grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -958,6 +1008,13 @@
     <div class="status-row">
         <div class="status-pill" id="resultsCount">Товаров: 0</div>
         <div class="status-pill" id="activeFilters">Фильтры: нет</div>
+    </div>
+
+    <div class="access-gate" id="accessGate" aria-live="polite">
+        <div class="access-gate-card">
+            <div class="access-gate-title">Доступ ограничен</div>
+            <div class="access-gate-text" id="accessGateMessage">Зарегистрируйтесь у менеджера.</div>
+        </div>
     </div>
 
     <main>
@@ -1100,7 +1157,8 @@
             profileOrdersLoaded: false,
             profileOrdersError: "",
             profileOrdersRequestId: 0,
-            user: null
+            user: null,
+            sessionStatus: "unknown"
         };
 
         const el = {
@@ -1127,6 +1185,8 @@
             profileDrawer: document.getElementById("profileDrawer"),
             profileHistory: document.getElementById("profileHistory"),
             profileLoadMore: document.getElementById("profileLoadMore"),
+            accessGate: document.getElementById("accessGate"),
+            accessGateMessage: document.getElementById("accessGateMessage"),
             toast: document.getElementById("toast")
         };
 
@@ -1145,7 +1205,11 @@
             renderBreadcrumb();
             renderProducts();
             updateStatus();
-            await applyFilters({ withCategories: true });
+            await syncSessionStatus();
+            applySessionGate();
+            if (isSessionActive()) {
+                await applyFilters({ withCategories: true });
+            }
             renderHistory();
             updateCartBadge();
         }
@@ -1175,6 +1239,10 @@
         function bindUI() {
             let searchTimer;
             el.searchInput.addEventListener("input", (event) => {
+                if (!isSessionActive()) {
+                    event.target.value = "";
+                    return;
+                }
                 clearTimeout(searchTimer);
                 const value = event.target.value;
                 searchTimer = setTimeout(() => {
@@ -1184,12 +1252,23 @@
             });
             bindKeyboardDismiss();
 
-            el.openCategories.addEventListener("click", () => openDrawer("categoryDrawer"));
+            el.openCategories.addEventListener("click", () => {
+                if (!ensureActiveSession()) {
+                    return;
+                }
+                openDrawer("categoryDrawer");
+            });
             el.cartButton.addEventListener("click", () => {
+                if (!ensureActiveSession()) {
+                    return;
+                }
                 renderCart();
                 openDrawer("cartDrawer");
             });
             el.profileButton.addEventListener("click", () => {
+                if (!ensureActiveSession()) {
+                    return;
+                }
                 renderProfile();
                 openDrawer("profileDrawer");
                 loadProfileOrders({ reset: true });
@@ -1289,6 +1368,7 @@
             state.catalogLoadingMore = false;
             state.catalogLoaded = false;
             state.catalogRequestId = 0;
+            state.sessionStatus = "unknown";
         }
 
         function initTelegram() {
@@ -1313,8 +1393,108 @@
             }
         }
 
+        function isSessionActive() {
+            return state.sessionStatus === "active";
+        }
+
+        function getSessionBlockMessage(status) {
+            if (status === "pending") {
+                return "Заявка на регистрацию уже отправлена. Ожидайте подтверждения менеджера.";
+            }
+            if (status === "blocked") {
+                return "Доступ заблокирован. Обратитесь к менеджеру.";
+            }
+            if (status === "unauthorized") {
+                return "Сессия Telegram недоступна. Откройте mini app через бота.";
+            }
+            return "Зарегистрируйтесь у менеджера.";
+        }
+
+        function applySessionGate() {
+            const active = isSessionActive();
+            if (el.accessGateMessage) {
+                el.accessGateMessage.textContent = active
+                    ? ""
+                    : getSessionBlockMessage(state.sessionStatus);
+            }
+            if (el.accessGate) {
+                el.accessGate.classList.toggle("show", !active);
+            }
+            document.body.classList.toggle("app-locked", !active);
+            if (!active) {
+                document.querySelectorAll(".drawer.open").forEach((drawer) => {
+                    drawer.classList.remove("open");
+                });
+            }
+            updateStatus();
+        }
+
+        function ensureActiveSession() {
+            if (isSessionActive()) {
+                return true;
+            }
+            showToast(getSessionBlockMessage(state.sessionStatus));
+            return false;
+        }
+
+        function mapSessionStatusFromApiError(code) {
+            if (code === "registration_pending") {
+                return "pending";
+            }
+            if (code === "customer_blocked") {
+                return "blocked";
+            }
+            if (code === "registration_required" || code === "customer_not_found") {
+                return "not_registered";
+            }
+            if (code === "unauthorized") {
+                return "unauthorized";
+            }
+            return null;
+        }
+
+        async function syncSessionStatus() {
+            const initData = getTelegramInitData();
+            if (!initData) {
+                state.sessionStatus = "unauthorized";
+                return state.sessionStatus;
+            }
+
+            try {
+                const response = await fetch("/api/session/status", {
+                    method: "GET",
+                    headers: {
+                        "x-telegram-init-data": initData
+                    },
+                    cache: "no-store"
+                });
+
+                const payload = await response.json().catch(() => null);
+                if (response.status === 401) {
+                    state.sessionStatus = "unauthorized";
+                    return state.sessionStatus;
+                }
+                if (!response.ok) {
+                    state.sessionStatus = "not_registered";
+                    return state.sessionStatus;
+                }
+
+                const status = String(payload?.status || "").trim();
+                if (status === "active" || status === "pending" || status === "not_registered" || status === "blocked") {
+                    state.sessionStatus = status;
+                } else {
+                    state.sessionStatus = "not_registered";
+                }
+                return state.sessionStatus;
+            } catch (error) {
+                console.error("❌ [SESSION] Не удалось получить статус:", error);
+                state.sessionStatus = "not_registered";
+                return state.sessionStatus;
+            }
+        }
+
         function canShowPrices() {
-            return state.pricingEnabled;
+            return isSessionActive() && state.pricingEnabled;
         }
 
         function renderProfile() {
@@ -1347,11 +1527,20 @@
                 return;
             }
 
+            if (!isSessionActive()) {
+                state.pricingEnabled = false;
+                state.pricingBlocked = true;
+                state.pricesById = {};
+                return;
+            }
+
             const initData = getTelegramInitData();
             if (!initData) {
                 state.pricingEnabled = false;
                 state.pricingBlocked = true;
                 state.pricesById = {};
+                state.sessionStatus = "unauthorized";
+                applySessionGate();
                 renderProducts();
                 renderCart();
                 updateCartBadge();
@@ -1390,6 +1579,11 @@
 
                     const payload = await response.json();
                     if (!payload?.authorized) {
+                        const statusFromApi = mapSessionStatusFromApiError(payload?.reason);
+                        if (statusFromApi) {
+                            state.sessionStatus = statusFromApi;
+                            applySessionGate();
+                        }
                         isAuthorized = false;
                         break;
                     }
@@ -1523,6 +1717,14 @@
         }
 
         async function loadCatalogPage({ reset = false, withCategories = false } = {}) {
+            if (!isSessionActive()) {
+                state.catalogLoading = false;
+                state.catalogLoadingMore = false;
+                state.catalogLoaded = true;
+                renderCatalogLoadingState();
+                return;
+            }
+
             if (!reset && (state.catalogLoading || !state.catalogHasMore)) {
                 return;
             }
@@ -1549,16 +1751,32 @@
             renderCatalogLoadingState();
 
             try {
+                const initData = getTelegramInitData();
                 const response = await fetch(
                     buildCatalogRequestUrl({
                         offset,
                         withCategories: requestWithCategories
                     }),
-                    { cache: "no-store" }
+                    {
+                        cache: "no-store",
+                        headers: initData
+                            ? { "x-telegram-init-data": initData }
+                            : {}
+                    }
                 );
 
                 if (!response.ok) {
-                    throw new Error("Catalog fetch failed");
+                    const errorPayload = await response.json().catch(() => null);
+                    const nextStatus = mapSessionStatusFromApiError(errorPayload?.error);
+                    if (nextStatus) {
+                        state.sessionStatus = nextStatus;
+                        applySessionGate();
+                    }
+                    if (response.status === 401) {
+                        state.sessionStatus = "unauthorized";
+                        applySessionGate();
+                    }
+                    throw new Error(errorPayload?.error || "catalog_fetch_failed");
                 }
 
                 const payload = await response.json();
@@ -1820,6 +2038,9 @@
         }
 
         function selectCategory(categoryId) {
+            if (!isSessionActive()) {
+                return;
+            }
             state.selectedCategoryId = categoryId;
             if (categoryId) {
                 expandCategoryPath(categoryId);
@@ -1870,6 +2091,11 @@
         }
 
         function updateStatus() {
+            if (!isSessionActive()) {
+                el.resultsCount.textContent = "Доступ ограничен";
+                el.activeFilters.textContent = getSessionBlockMessage(state.sessionStatus);
+                return;
+            }
             const suffix = state.catalogHasMore ? "+" : "";
             el.resultsCount.textContent = `Товаров: ${state.filteredProducts.length}${suffix}`;
             const filters = [];
@@ -1886,6 +2112,10 @@
         }
 
         function addToCart(productId) {
+            if (!isSessionActive()) {
+                showToast(getSessionBlockMessage(state.sessionStatus));
+                return;
+            }
             if (!canShowPrices()) {
                 showToast("Цены доступны после авторизации");
                 return;
@@ -1911,6 +2141,11 @@
 
         function renderCart() {
             el.cartItems.innerHTML = "";
+            if (!isSessionActive()) {
+                el.cartItems.innerHTML = `<div class="empty-state" style="display:block">${getSessionBlockMessage(state.sessionStatus)}</div>`;
+                el.cartTotal.textContent = formatPrice(null);
+                return;
+            }
             if (!canShowPrices()) {
                 el.cartItems.innerHTML = '<div class="empty-state" style="display:block">Цены доступны после авторизации.</div>';
                 el.cartTotal.textContent = formatPrice(null);
@@ -2030,6 +2265,10 @@
         }
 
         async function placeOrder() {
+            if (!isSessionActive()) {
+                showToast(getSessionBlockMessage(state.sessionStatus));
+                return;
+            }
             if (!canShowPrices()) {
                 showToast("Цены доступны после авторизации");
                 return;
@@ -2225,6 +2464,16 @@
         }
 
         async function loadProfileOrders({ reset = false } = {}) {
+            if (!isSessionActive()) {
+                state.profileOrders = [];
+                state.profileOrdersOffset = 0;
+                state.profileOrdersHasMore = false;
+                state.profileOrdersLoaded = true;
+                state.profileOrdersError = getSessionBlockMessage(state.sessionStatus);
+                renderHistory();
+                return;
+            }
+
             if (!state.user || !state.user.id) {
                 state.profileOrders = [];
                 state.profileOrdersOffset = 0;
@@ -2281,7 +2530,15 @@
                 if (!response.ok) {
                     const errorPayload = await response.json().catch(() => null);
                     if (response.status === 401) {
+                        state.sessionStatus = "unauthorized";
+                        applySessionGate();
                         throw new Error("unauthorized");
+                    }
+                    const statusFromApi = mapSessionStatusFromApiError(errorPayload?.error);
+                    if (statusFromApi) {
+                        state.sessionStatus = statusFromApi;
+                        applySessionGate();
+                        throw new Error("access_denied");
                     }
                     throw new Error(errorPayload?.error || `HTTP ${response.status}`);
                 }
@@ -2312,6 +2569,8 @@
                 console.error("❌ [PROFILE] Не удалось загрузить заказы:", error);
                 if (String(error?.message || "") === "unauthorized") {
                     state.profileOrdersError = "Сессия Telegram истекла. Перезагрузите мини-приложение.";
+                } else if (String(error?.message || "") === "access_denied") {
+                    state.profileOrdersError = getSessionBlockMessage(state.sessionStatus);
                 } else {
                     state.profileOrdersError = "Не удалось загрузить заказы. Проверьте соединение и попробуйте снова.";
                 }
@@ -2356,8 +2615,19 @@
                 });
                 if (!response.ok) {
                     const errorPayload = await response.json().catch(() => null);
+                    const statusFromApi = mapSessionStatusFromApiError(errorPayload?.error);
+                    if (statusFromApi) {
+                        state.sessionStatus = statusFromApi;
+                        applySessionGate();
+                    }
                     if (errorPayload?.error === "customer_not_found") {
                         return { ok: false, error: "Ваш Telegram не привязан к клиенту. Обратитесь к менеджеру." };
+                    }
+                    if (errorPayload?.error === "registration_pending") {
+                        return { ok: false, error: "Заявка на регистрацию в обработке. Ожидайте менеджера." };
+                    }
+                    if (errorPayload?.error === "customer_blocked") {
+                        return { ok: false, error: "Доступ заблокирован. Обратитесь к менеджеру." };
                     }
                     return { ok: false, error: "Сервер не принял заказ. Попробуйте еще раз." };
                 }

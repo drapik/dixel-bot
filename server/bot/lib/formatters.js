@@ -106,10 +106,68 @@ function formatOrderMessage(payload, { timeZone } = {}) {
     return lines.join("\n");
 }
 
+function normalizeErrorText(error) {
+    if (!error) {
+        return "—";
+    }
+
+    const raw = error instanceof Error
+        ? (error.message || String(error))
+        : String(error);
+
+    const normalized = raw.trim().replace(/\s+/g, " ");
+    if (!normalized) {
+        return "—";
+    }
+
+    const MAX_LENGTH = 280;
+    if (normalized.length <= MAX_LENGTH) {
+        return normalized;
+    }
+
+    return `${normalized.slice(0, MAX_LENGTH - 1)}…`;
+}
+
+function formatMoyskladExportFailureMessage(
+    { order, localOrderId, customer, user, error } = {},
+    { timeZone } = {}
+) {
+    const payload = order && typeof order === "object" ? order : {};
+    const lines = ["⚠️ Ошибка выгрузки заказа в МойСклад"];
+
+    if (payload.orderId) {
+        lines.push(`ID заказа: ${payload.orderId}`);
+    }
+
+    if (localOrderId) {
+        lines.push(`Локальный ID: ${localOrderId}`);
+    }
+
+    lines.push(`Дата: ${formatOrderDate(payload.createdAt, timeZone)}`);
+
+    if (user) {
+        lines.push(`Клиент: ${formatUser(user)}`);
+    }
+
+    if (customer?.id) {
+        lines.push(`Customer ID: ${customer.id}`);
+    }
+
+    if (payload.total !== undefined) {
+        lines.push(`Сумма: ${formatMoneyRub(Number(payload.total))}`);
+    }
+
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    lines.push(`Позиций: ${items.length}`);
+    lines.push(`Ошибка: ${normalizeErrorText(error)}`);
+
+    return lines.join("\n");
+}
+
 module.exports = {
     formatMoneyRub,
     formatOrderDate,
     formatOrderMessage,
+    formatMoyskladExportFailureMessage,
     formatUser
 };
-

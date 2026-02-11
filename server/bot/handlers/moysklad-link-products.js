@@ -4,17 +4,10 @@ const { Markup } = require("telegraf");
 const { fetchAllProducts, getMoyskladToken, findProductByCode } = require("../lib/moysklad");
 const { getSupabaseAdminClient } = require("../lib/supabase");
 const { fetchAllSupabaseProducts } = require("../lib/supabase-products");
+const { isAdminUser } = require("../lib/admin-access");
 
 const PENDING_TTL_MS = 15 * 60 * 1000;
 const pendingByNonce = new Map();
-
-function isAdmin(ctx, config) {
-    const fromId = ctx.from?.id;
-    if (!fromId) {
-        return false;
-    }
-    return Number(fromId) === Number(config.adminId);
-}
 
 function purgeExpiredPending() {
     const now = Date.now();
@@ -422,7 +415,7 @@ async function applyUpdates({ updates, onProgress }) {
 
 function registerMoyskladProductLinking(bot, config) {
     bot.command("ms_link_products", async (ctx) => {
-        if (!isAdmin(ctx, config)) {
+        if (!(await isAdminUser(ctx.from?.id, config))) {
             await ctx.reply("⛔️ Команда доступна только администратору.");
             return;
         }
@@ -535,7 +528,7 @@ function registerMoyskladProductLinking(bot, config) {
             // ignore
         }
 
-        if (!isAdmin(ctx, config)) {
+        if (!(await isAdminUser(ctx.from?.id, config))) {
             await safeEditMessageText(ctx, "⛔️ Команда доступна только администратору.");
             return;
         }

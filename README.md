@@ -69,17 +69,26 @@ MVP для B2B-клиентов с поиском, вложенными кате
 - Код: `server/bot/`
 - Запуск локально: `npm run start:bot`
 - Проверка: команда `/ping`
-- Админ: команда `/ms_link` — сопоставить клиентов с контрагентами МойСклад по email (с подтверждением)
+- Регистрация пользователей: через `/start` в боте (создается заявка менеджеру)
+- Админ:
+  - `/reg_email <request_id> <email>` — обработать заявку регистрации
+  - `/ms_link` — сопоставить клиентов с контрагентами МойСклад по email (с подтверждением)
+  - `/ms_link_products` — сопоставить товары с МойСклад
+  - `/admins` — список админов
+  - `/admin_add <telegram_id>` и `/admin_remove <telegram_id>` — управление админами (только owner из `TELEGRAM_ADMIN_ID`)
 - Уведомления о заказах уходят в `TELEGRAM_ADMIN_ID` (по умолчанию `314009331`)
 - Дата `createdAt` форматируется в `ORDER_TIMEZONE` (по умолчанию `Europe/Moscow`)
 
 ## Supabase (бэкэнд)
 1. Откройте Supabase SQL Editor и выполните `supabase_schema.sql`.
    Если проект уже создан раньше — выполните миграцию `scripts/supabase/migrations/2026-01-30_customers_email_moysklad.sql`.
+   Для новой системы заявок и мульти-админов дополнительно выполните:
+   `scripts/supabase/migrations/2026-02-11_registration_requests.sql`.
 2. Импортируйте категории и товары из YML (`npm run import-yml`).
 3. Скрывайте категории, выставляя `categories.hidden = true` (дочерние скрываются автоматически). Обычный импорт сохраняет `hidden`, а `--wipe` сбрасывает.
 4. Назначайте прайс-лист клиентам через `customers.price_tier`.
-5. Для продакшена: проверяйте `initData` Telegram на сервере и работайте с Supabase через service role. Не храните service key в браузере.
+5. Mini app открывает каталог только для зарегистрированных пользователей (статус `active`).
+6. Для продакшена: проверяйте `initData` Telegram на сервере и работайте с Supabase через service role. Не храните service key в браузере.
 
 ## Примечания
 - Поставщик отдает 3 файла: `full_catalog.yml` (полный каталог), `price_update.yml` (цены), `stock_update.yml` (остатки).
