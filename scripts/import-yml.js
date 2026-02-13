@@ -65,11 +65,12 @@ function buildConfigFromEnv() {
                 legacy: SUPPLIER_YML_PATH_LEGACY
             },
             shouldSave: isTruthy(process.env.SUPPLIER_YML_SAVE),
-            // Какую цену берем как базовую (base_price). По умолчанию - розница.
-            basePriceType: String(process.env.SUPPLIER_BASE_PRICE_TYPE || "Розничная цена").trim(),
+            // Какую цену берем как базовую (base_price). Сейчас базой считаем "Дистрибьютер".
+            basePriceType: String(process.env.SUPPLIER_BASE_PRICE_TYPE || "Дистрибьютер").trim(),
             // Если складов несколько: можно выбрать нужный (иначе суммируем).
             stockStore: String(process.env.SUPPLIER_STOCK_STORE || "").trim(),
-            priceMultiplier: parseNumber(process.env.PRICE_MULTIPLIER, 1)
+            // Например: 1.29 = +29% к базовой цене.
+            priceMultiplier: parseNumber(process.env.PRICE_MULTIPLIER, 1.29)
         }
     };
 
@@ -209,4 +210,3 @@ module.exports = {
     runStockUpdate,
     runDeltaUpdate
 };
-
