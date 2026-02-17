@@ -17,11 +17,14 @@ const ORDER_TIMEZONE = String(process.env.ORDER_TIMEZONE || process.env.TZ || "E
 const { formatOrderMessage, formatMoyskladExportFailureMessage } = require("./bot/lib/formatters");
 const {
     insertOrderWithItems,
+    findOrderByClientOrderId,
+    isClientOrderIdConflictError,
     updateOrderMoyskladStatus,
     updateOrderStatusByMoyskladOrderId,
     fetchProductMoyskladMap,
     fetchCustomerOrders
 } = require("./lib/order-storage");
+const { buildTrustedOrderFromCart } = require("./lib/order-pricing");
 const {
     getMoyskladToken,
     getStoreId,
@@ -779,6 +782,25 @@ async function exportOrderToMoysklad({ supabase, order, customer }) {
     return createCustomerOrder({ token, payload });
 }
 
+function buildDuplicateOrderResponse(existingOrder, clientOrderId) {
+    return {
+        ok: true,
+        duplicate: true,
+        order: {
+            id: existingOrder?.id || null,
+            orderId: clientOrderId || null
+        },
+        notification: {
+            sent: null
+        },
+        moysklad: {
+            exported: existingOrder?.moysklad_exported ?? null,
+            orderId: existingOrder?.moysklad_order_id || null,
+            alertSent: null
+        }
+    };
+}
+
 app.post("/api/order", async (req, res) => {
     const initData = extractInitData(req);
 
@@ -796,11 +818,6 @@ app.post("/api/order", async (req, res) => {
         return res.status(400).json({ ok: false, error: "order items required" });
     }
 
-    const total = Number(order.total);
-    if (!Number.isFinite(total)) {
-        return res.status(400).json({ ok: false, error: "order total invalid" });
-    }
-
     try {
         const session = await resolveSessionStateByInitData(initData);
         if (!session.ok) {
@@ -816,11 +833,46 @@ app.post("/api/order", async (req, res) => {
 
         const customer = session.customer;
         const tgUser = session.tgUser || null;
-        const orderRecord = await insertOrderWithItems(
+        const trustedOrder = await buildTrustedOrderFromCart({
             supabase,
-            { ...order, total, items },
-            customer
+            rawOrder: order,
+            customer,
+            discounts: DISCOUNTS,
+            pricingChunkSize: PRICING_CHUNK_SIZE
+        });
+
+        const existingOrder = await findOrderByClientOrderId(
+            supabase,
+            customer.id,
+            trustedOrder.orderId
         );
+        if (existingOrder?.id) {
+            return res.json(buildDuplicateOrderResponse(existingOrder, trustedOrder.orderId));
+        }
+
+        let orderRecord;
+        try {
+            orderRecord = await insertOrderWithItems(
+                supabase,
+                trustedOrder,
+                customer
+            );
+        } catch (error) {
+            if (!isClientOrderIdConflictError(error)) {
+                throw error;
+            }
+
+            const duplicateOrder = await findOrderByClientOrderId(
+                supabase,
+                customer.id,
+                trustedOrder.orderId
+            );
+            if (duplicateOrder?.id) {
+                return res.json(buildDuplicateOrderResponse(duplicateOrder, trustedOrder.orderId));
+            }
+
+            throw error;
+        }
 
         let moyskladResult = null;
         let moyskladError = null;
@@ -834,11 +886,11 @@ app.post("/api/order", async (req, res) => {
                 async (attempt) => {
                     if (attempt > 0) {
                         console.warn(
-                            `[MOYSKLAD] Повтор выгрузки заказа ${order.orderId || "unknown"} (попытка ${attempt + 1})`
+                            `[MOYSKLAD] Повтор выгрузки заказа ${trustedOrder.orderId || "unknown"} (попытка ${attempt + 1})`
                         );
                     }
 
-                    return exportOrderToMoysklad({ supabase, order, customer });
+                    return exportOrderToMoysklad({ supabase, order: trustedOrder, customer });
                 },
                 { retries: 3, delayMs: 5000 }
             );
@@ -864,8 +916,8 @@ app.post("/api/order", async (req, res) => {
 
         let notifyError = null;
         const payload = {
-            ...order,
-            user: order.user || tgUser || null
+            ...trustedOrder,
+            user: tgUser
         };
         const message = formatOrderMessage(payload, { timeZone: ORDER_TIMEZONE });
 
@@ -906,7 +958,8 @@ app.post("/api/order", async (req, res) => {
         return res.json({
             ok: true,
             order: {
-                id: orderRecord.id
+                id: orderRecord.id,
+                orderId: trustedOrder.orderId
             },
             notification: {
                 sent: !notifyError
@@ -918,6 +971,13 @@ app.post("/api/order", async (req, res) => {
             }
         });
     } catch (error) {
+        if (Number.isInteger(error?.httpStatus)) {
+            return res.status(error.httpStatus).json({
+                ok: false,
+                error: error.code || "order_invalid",
+                details: error.details || null
+            });
+        }
         console.error("❌ [SERVER] /api/order failed:", error);
         return res.status(500).json({ ok: false, error: "send_failed" });
     }

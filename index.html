@@ -1157,6 +1157,8 @@
             profileOrdersLoaded: false,
             profileOrdersError: "",
             profileOrdersRequestId: 0,
+            orderSubmitting: false,
+            pendingOrder: null,
             user: null,
             sessionStatus: "unknown"
         };
@@ -1192,6 +1194,8 @@
 
         const productTemplate = document.getElementById("productTemplate");
         const currencyFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
+        const ORDER_BUTTON_DEFAULT_LABEL = "Отправить заказ";
+        const ORDER_BUTTON_SUBMITTING_LABEL = "Отправка...";
 
         init();
 
@@ -1212,6 +1216,7 @@
             }
             renderHistory();
             updateCartBadge();
+            updateOrderButtonState();
         }
 
         function initCatalogObserver() {
@@ -1369,6 +1374,7 @@
             state.catalogLoaded = false;
             state.catalogRequestId = 0;
             state.sessionStatus = "unknown";
+            state.pendingOrder = null;
         }
 
         function initTelegram() {
@@ -1427,6 +1433,7 @@
                 });
             }
             updateStatus();
+            updateOrderButtonState();
         }
 
         function ensureActiveSession() {
@@ -2144,16 +2151,19 @@
             if (!isSessionActive()) {
                 el.cartItems.innerHTML = `<div class="empty-state" style="display:block">${getSessionBlockMessage(state.sessionStatus)}</div>`;
                 el.cartTotal.textContent = formatPrice(null);
+                updateOrderButtonState();
                 return;
             }
             if (!canShowPrices()) {
                 el.cartItems.innerHTML = '<div class="empty-state" style="display:block">Цены доступны после авторизации.</div>';
                 el.cartTotal.textContent = formatPrice(null);
+                updateOrderButtonState();
                 return;
             }
             if (!state.cart.length) {
                 el.cartItems.innerHTML = '<div class="empty-state" style="display:block">Корзина пуста.</div>';
                 el.cartTotal.textContent = formatPrice(0);
+                updateOrderButtonState();
                 return;
             }
 
@@ -2213,6 +2223,7 @@
 
             el.cartItems.appendChild(fragment);
             el.cartTotal.textContent = formatPrice(calculateCartTotal());
+            updateOrderButtonState();
         }
 
         function updateCartQty(productId, qty) {
@@ -2264,7 +2275,24 @@
             }
         }
 
+        function updateOrderButtonState() {
+            if (!el.orderButton) {
+                return;
+            }
+            const canSubmit = isSessionActive()
+                && canShowPrices()
+                && state.cart.length > 0
+                && !state.orderSubmitting;
+            el.orderButton.disabled = !canSubmit;
+            el.orderButton.textContent = state.orderSubmitting
+                ? ORDER_BUTTON_SUBMITTING_LABEL
+                : ORDER_BUTTON_DEFAULT_LABEL;
+        }
+
         async function placeOrder() {
+            if (state.orderSubmitting) {
+                return;
+            }
             if (!isSessionActive()) {
                 showToast(getSessionBlockMessage(state.sessionStatus));
                 return;
@@ -2282,47 +2310,66 @@
                 return;
             }
 
-            const orderId = createOrderId();
             const createdAt = new Date().toISOString();
-            const total = calculateCartTotal();
-            if (!Number.isFinite(total)) {
-                showToast("Цена недоступна");
+            const items = state.cart
+                .map((item) => ({
+                    productId: item?.productId ? String(item.productId) : "",
+                    qty: Number(item?.qty)
+                }))
+                .filter((item) => item.productId && Number.isInteger(item.qty) && item.qty > 0);
+            if (!items.length) {
+                showToast("Корзина пуста");
                 return;
             }
-            const items = state.cart.map((item) => {
-                const product = state.productsById[item.productId];
-                return {
-                    productId: item.productId,
-                    sku: product?.sku,
-                    name: product?.name,
-                    qty: item.qty,
-                    price: getProductPrice(product?.id)
-                };
-            });
+
+            const cartSignature = buildCartSignature(items);
+            const pendingOrder = state.pendingOrder;
+            const orderId = pendingOrder && pendingOrder.signature === cartSignature
+                ? pendingOrder.id
+                : createOrderId();
 
             const order = {
                 id: orderId,
                 createdAt,
-                total,
                 items,
             };
 
-            const result = await sendOrderToTelegram(order);
-            if (!result.ok) {
-                showToast(result.error || "Не удалось создать заказ. Повторите попытку.");
-                return;
-            }
+            state.orderSubmitting = true;
+            state.pendingOrder = {
+                id: orderId,
+                signature: cartSignature
+            };
+            updateOrderButtonState();
 
-            state.cart = [];
-            saveCart();
-            renderCart();
-            updateCartBadge();
-            closeDrawer("cartDrawer");
-            showToast("Заказ создан");
+            try {
+                const result = await sendOrderToTelegram(order);
+                if (!result.ok) {
+                    showToast(result.error || "Не удалось создать заказ. Повторите попытку.");
+                    return;
+                }
 
-            if (el.profileDrawer.classList.contains("open")) {
-                loadProfileOrders({ reset: true });
+                state.cart = [];
+                saveCart();
+                state.pendingOrder = null;
+                renderCart();
+                updateCartBadge();
+                closeDrawer("cartDrawer");
+                showToast("Заказ создан");
+
+                if (el.profileDrawer.classList.contains("open")) {
+                    loadProfileOrders({ reset: true });
+                }
+            } finally {
+                state.orderSubmitting = false;
+                updateOrderButtonState();
             }
+        }
+
+        function buildCartSignature(items) {
+            return (Array.isArray(items) ? items : [])
+                .map((item) => `${item.productId}:${item.qty}`)
+                .sort()
+                .join("|");
         }
 
         function mapOrderStatus(status) {
@@ -2596,8 +2643,6 @@
                 type: "order",
                 orderId: order.id,
                 createdAt: order.createdAt,
-                total: order.total,
-                user: state.user,
                 items: order.items
             };
 
@@ -2628,6 +2673,15 @@
                     }
                     if (errorPayload?.error === "customer_blocked") {
                         return { ok: false, error: "Доступ заблокирован. Обратитесь к менеджеру." };
+                    }
+                    if (errorPayload?.error === "order_items_not_found") {
+                        return { ok: false, error: "Часть товаров недоступна. Обновите корзину." };
+                    }
+                    if (errorPayload?.error === "order_price_not_found") {
+                        return { ok: false, error: "Не удалось получить цену. Обновите каталог." };
+                    }
+                    if (errorPayload?.error === "order_item_invalid") {
+                        return { ok: false, error: "В корзине некорректные позиции. Проверьте количество товаров." };
                     }
                     return { ok: false, error: "Сервер не принял заказ. Попробуйте еще раз." };
                 }
@@ -2692,6 +2746,7 @@
 
         function saveCart() {
             localStorage.setItem(STORAGE_KEYS.cart, JSON.stringify(state.cart));
+            state.pendingOrder = null;
         }
 
         function saveUser() {

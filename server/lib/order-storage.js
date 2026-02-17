@@ -9,14 +9,29 @@ function parseCreatedAt(value) {
     return date.toISOString();
 }
 
+function isMissingClientOrderIdColumnError(error) {
+    const code = String(error?.code || "").trim();
+    if (code === "42703") {
+        return true;
+    }
+
+    const message = String(error?.message || "").toLowerCase();
+    return message.includes("client_order_id") && message.includes("column");
+}
+
 function buildOrderRow(order, customer) {
     const total = Number(order?.total);
+    const clientOrderId = order?.orderId ? String(order.orderId).trim() : "";
     const row = {
         customer_id: customer?.id || null,
         status: "pending",
         price_tier: customer?.price_tier || "minus5",
         total_amount: Number.isFinite(total) ? total : 0
     };
+
+    if (clientOrderId) {
+        row.client_order_id = clientOrderId;
+    }
 
     const createdAt = parseCreatedAt(order?.createdAt);
     if (createdAt) {
@@ -43,11 +58,25 @@ function normalizeOrderItems(orderItems) {
 
 async function insertOrderWithItems(supabase, order, customer) {
     const orderRow = buildOrderRow(order, customer);
-    const { data: orderData, error: orderError } = await supabase
+    let { data: orderData, error: orderError } = await supabase
         .from("orders")
         .insert(orderRow)
         .select("id")
         .single();
+
+    if (
+        orderError
+        && isMissingClientOrderIdColumnError(orderError)
+        && Object.prototype.hasOwnProperty.call(orderRow, "client_order_id")
+    ) {
+        const fallbackOrderRow = { ...orderRow };
+        delete fallbackOrderRow.client_order_id;
+        ({ data: orderData, error: orderError } = await supabase
+            .from("orders")
+            .insert(fallbackOrderRow)
+            .select("id")
+            .single());
+    }
 
     if (orderError) {
         throw orderError;
@@ -72,6 +101,39 @@ async function insertOrderWithItems(supabase, order, customer) {
     }
 
     return orderData;
+}
+
+async function findOrderByClientOrderId(supabase, customerId, clientOrderId) {
+    const customer = customerId ? String(customerId).trim() : "";
+    const orderId = clientOrderId ? String(clientOrderId).trim() : "";
+    if (!customer || !orderId) {
+        return null;
+    }
+
+    const { data, error } = await supabase
+        .from("orders")
+        .select("id, moysklad_exported, moysklad_order_id")
+        .eq("customer_id", customer)
+        .eq("client_order_id", orderId)
+        .maybeSingle();
+
+    if (error) {
+        if (isMissingClientOrderIdColumnError(error)) {
+            return null;
+        }
+        throw error;
+    }
+
+    return data || null;
+}
+
+function isClientOrderIdConflictError(error) {
+    if (String(error?.code || "") !== "23505") {
+        return false;
+    }
+
+    const message = String(error?.message || "").toLowerCase();
+    return message.includes("orders_customer_client_order_id_unique");
 }
 
 async function updateOrderMoyskladStatus(supabase, orderId, { exported, msOrderId, errorMessage }) {
@@ -246,6 +308,8 @@ async function fetchCustomerOrders(supabase, customerId, { limit = 5, offset = 0
 
 module.exports = {
     insertOrderWithItems,
+    findOrderByClientOrderId,
+    isClientOrderIdConflictError,
     updateOrderMoyskladStatus,
     updateOrderStatusByMoyskladOrderId,
     fetchProductMoyskladMap,

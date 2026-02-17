@@ -122,6 +122,7 @@ from public.products;
 create table public.orders (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid references public.customers(id),
+  client_order_id text,
   status text not null default 'pending',
   price_tier text not null default 'minus5',
   total_amount numeric(12,2) not null default 0,
@@ -132,6 +133,9 @@ create table public.orders (
 );
 
 create index orders_customer_id_created_at_idx on public.orders(customer_id, created_at desc);
+create unique index orders_customer_client_order_id_unique
+  on public.orders(customer_id, client_order_id)
+  where client_order_id is not null;
 create index orders_moysklad_exported_idx on public.orders(moysklad_exported);
 create unique index orders_moysklad_order_id_unique
   on public.orders (moysklad_order_id)
