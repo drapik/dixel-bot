@@ -148,6 +148,51 @@ function normalizeCatalogOffers(rawOffers, config) {
         .filter(Boolean);
 }
 
+function resolveUpdateOffers(data, updateRootKey, contextLabel) {
+    const root = data?.[updateRootKey];
+    if (root) {
+        return asArray(root.offer);
+    }
+
+    const fullCatalogOffers = asArray(data?.yml_catalog?.shop?.offers?.offer);
+    if (fullCatalogOffers.length) {
+        return fullCatalogOffers;
+    }
+
+    throw new Error(
+        `Неверный формат ${contextLabel}: отсутствует ${updateRootKey} и yml_catalog.shop.offers.offer`
+    );
+}
+
+function mapPriceUpdates(rawOffers, config) {
+    return rawOffers
+        .map((offer) => {
+            const id = offer?.id ? String(offer.id) : "";
+            if (!id) {
+                return null;
+            }
+            const basePrice = parseOfferBasePrice(offer, config);
+            if (basePrice === null) {
+                return null;
+            }
+            return { external_id: id, base_price: basePrice };
+        })
+        .filter(Boolean);
+}
+
+function mapStockUpdates(rawOffers, config) {
+    return rawOffers
+        .map((offer) => {
+            const id = offer?.id ? String(offer.id) : "";
+            if (!id) {
+                return null;
+            }
+            const stock = parseOfferStock(offer, config);
+            return { external_id: id, stock };
+        })
+        .filter(Boolean);
+}
+
 function parseFullCatalog(data, config) {
     const shop = data?.yml_catalog?.shop;
     if (!shop) {
@@ -168,46 +213,15 @@ function parseFullCatalog(data, config) {
 }
 
 function parsePriceUpdates(data, config) {
-    const root = data?.price_updates;
-    if (!root) {
-        throw new Error("Неверный формат price_update: отсутствует price_updates");
-    }
-
-    const rawOffers = asArray(root.offer);
-    const updates = rawOffers
-        .map((offer) => {
-            const id = offer?.id ? String(offer.id) : "";
-            if (!id) {
-                return null;
-            }
-            const basePrice = parseOfferBasePrice(offer, config);
-            if (basePrice === null) {
-                return null;
-            }
-            return { external_id: id, base_price: basePrice };
-        })
-        .filter(Boolean);
+    const rawOffers = resolveUpdateOffers(data, "price_updates", "price_update");
+    const updates = mapPriceUpdates(rawOffers, config);
 
     return { updates };
 }
 
 function parseStockUpdates(data, config) {
-    const root = data?.stock_updates;
-    if (!root) {
-        throw new Error("Неверный формат stock_update: отсутствует stock_updates");
-    }
-
-    const rawOffers = asArray(root.offer);
-    const updates = rawOffers
-        .map((offer) => {
-            const id = offer?.id ? String(offer.id) : "";
-            if (!id) {
-                return null;
-            }
-            const stock = parseOfferStock(offer, config);
-            return { external_id: id, stock };
-        })
-        .filter(Boolean);
+    const rawOffers = resolveUpdateOffers(data, "stock_updates", "stock_update");
+    const updates = mapStockUpdates(rawOffers, config);
 
     return { updates };
 }
@@ -221,4 +235,3 @@ module.exports = {
     normalizeYmlCategories,
     normalizeCatalogOffers
 };
-

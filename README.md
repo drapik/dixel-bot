@@ -91,6 +91,6 @@ MVP для B2B-клиентов с поиском, вложенными кате
 6. Для продакшена: проверяйте `initData` Telegram на сервере и работайте с Supabase через service role. Не храните service key в браузере.
 
 ## Примечания
-- Поставщик отдает 3 файла: `full_catalog.yml` (полный каталог), `price_update.yml` (цены), `stock_update.yml` (остатки).
-- Для импорта используются переменные `SUPPLIER_FULL_YML_URL`, `SUPPLIER_PRICE_YML_URL`, `SUPPLIER_STOCK_YML_URL`.
+- Поставщик может отдавать либо 3 файла (`full_catalog.yml`, `price_update.yml`, `stock_update.yml`), либо единый YML (например `mrx_catalog.yml`).
+- Для импорта используются переменные `SUPPLIER_FULL_YML_URL`, `SUPPLIER_PRICE_YML_URL`, `SUPPLIER_STOCK_YML_URL` (при едином YML можно указать один и тот же URL во всех трех).
 - История заказов пока хранится в `localStorage`.
